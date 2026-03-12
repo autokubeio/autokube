@@ -1,0 +1,25 @@
+# Dependencies
+node_modules
+
+# Build artifacts (rebuilt inside Docker)
+build
+.svelte-kit
+
+# Local data (SQLite DB, encryption key — use volume mounts in production)
+data
+
+# Dev & CI files
+.env
+.env.*
+*.md
+.git
+.gitignore
+.github
+
+# Docs not needed at runtime
+docs
+
+# Editor/OS artifacts
+.DS_Store
+.vscode
+*.log

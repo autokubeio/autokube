@@ -1,0 +1,357 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   CSS Custom Properties
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.data-table-view {
+	--dt-font-size: calc(12px * var(--grid-font-size-scale, 1));
+	--dt-select-col-width: 32px;
+	--dt-expand-col-width: 24px;
+	--dt-state-badge-width: calc(70px * var(--grid-font-size-scale, 1));
+	--dt-state-col-width: calc(90px * var(--grid-font-size-scale, 1));
+	--dt-border-subtle: color-mix(in srgb, var(--border) 30%, transparent);
+	--dt-border-header: color-mix(in srgb, var(--border) 50%, transparent);
+	--dt-border-actions: color-mix(in srgb, var(--border) 40%, transparent);
+	--dt-primary-tint-10: color-mix(in srgb, var(--primary) 10%, var(--background));
+	--dt-primary-tint-15: color-mix(in srgb, var(--primary) 15%, var(--background));
+	--dt-amber-tint-8: color-mix(in srgb, #f59e0b 8%, var(--background));
+	--dt-amber-tint-12: color-mix(in srgb, #f59e0b 12%, var(--background));
+	--dt-muted-tint-30: color-mix(in srgb, var(--muted) 30%, transparent);
+	--dt-muted-tint-50: color-mix(in srgb, var(--muted) 50%, var(--background));
+	--dt-muted-tint-70: color-mix(in srgb, var(--muted) 70%, var(--background));
+	--dt-resize-handle-hover: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Font Sizing
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.data-table-view,
+.data-table-view th,
+.data-table-view td,
+.data-table-view span,
+.data-table-view div,
+.data-table-view p,
+.data-table-view button,
+.data-table-view code {
+	font-size: var(--dt-font-size) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   State Badge & Column
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.state-badge {
+	width: var(--dt-state-badge-width);
+	min-width: var(--dt-state-badge-width);
+	max-width: var(--dt-state-badge-width);
+	text-align: center;
+}
+
+.data-table-view th.state-col,
+.data-table-view td.state-col {
+	width: var(--dt-state-col-width) !important;
+	min-width: var(--dt-state-col-width) !important;
+	max-width: var(--dt-state-col-width) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Table Layout & Wrapper
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.data-table-view-wrapper {
+	overflow-x: auto;
+	position: relative;
+}
+
+.data-table-view {
+	table-layout: fixed;
+	border-collapse: separate;
+	border-spacing: 0;
+	min-width: 100%;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Cell Content & Truncation
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.data-table-view td,
+.data-table-view th {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	position: relative;
+}
+
+.data-table-view td.no-truncate,
+.data-table-view th.no-truncate {
+	overflow: visible;
+	text-overflow: clip;
+}
+
+.data-table-view td .flex,
+.data-table-view th .flex {
+	min-width: 0;
+	overflow: hidden;
+}
+
+/* Non-sticky cells don't create stacking context */
+.data-table-view tbody td:not(.select-col):not(.actions-col) {
+	position: static;
+	z-index: auto;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Fixed Columns (Select, Expand, Actions)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Select column (checkbox) */
+.data-table-view th.select-col,
+.data-table-view td.select-col {
+	width: var(--dt-select-col-width) !important;
+	min-width: var(--dt-select-col-width);
+	max-width: var(--dt-select-col-width);
+	text-align: center;
+}
+
+.data-table-view th.select-col > *,
+.data-table-view td.select-col > * {
+	margin: 0 auto;
+}
+
+/* Expand column */
+.data-table-view th.expand-col,
+.data-table-view td.expand-col {
+	width: var(--dt-expand-col-width) !important;
+	min-width: var(--dt-expand-col-width);
+	max-width: var(--dt-expand-col-width);
+	border-right: none !important;
+	text-align: center;
+}
+
+.data-table-view th.expand-col > *,
+.data-table-view td.expand-col > * {
+	margin: 0 auto;
+}
+
+/* Actions column (width controlled by DataGrid component) */
+.data-table-view td.actions-col,
+.data-table-view th.actions-col {
+	border-right: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Borders
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.data-table-view td {
+	border-right: 1px solid var(--dt-border-subtle);
+	border-bottom: 1px solid var(--dt-border-subtle);
+}
+
+.data-table-view th {
+	border-right: 1px solid var(--dt-border-subtle);
+	border-bottom: 1px solid var(--dt-border-header);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Sticky Positioning & Z-Index
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Sticky header row */
+.data-table-view thead {
+	position: sticky;
+	top: 0;
+	z-index: 10;
+}
+
+/* Sticky body cells (select & actions) */
+.data-table-view td.select-col {
+	position: sticky;
+	left: 0;
+	z-index: 2;
+	background: var(--background);
+}
+
+.data-table-view td.actions-col {
+	position: sticky;
+	right: 0;
+	z-index: 2;
+	background: var(--background);
+	box-shadow:
+		-1px 0 0 0 var(--dt-border-actions),
+		-8px 0 8px -4px var(--background);
+}
+
+/* Sticky header cells */
+.data-table-view th.select-col,
+.data-table-view th.actions-col {
+	position: sticky;
+	z-index: 11;
+	background: var(--muted);
+}
+
+.data-table-view th.select-col {
+	left: 0;
+}
+
+.data-table-view th.actions-col {
+	right: 0;
+}
+
+/* Actions header extension - covers content on both sides */
+.data-table-view thead th.actions-col {
+	position: sticky;
+	right: 0;
+	z-index: 12;
+	background: var(--muted);
+	box-shadow:
+		-20px 0 0 0 var(--muted),
+		20px 0 0 0 var(--muted);
+	border-top-right-radius: 0.5rem;
+	clip-path: inset(-1px -20px -1px -20px round 0 0.5rem 0 0);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Row States (Hover, Selected, Expanded)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Row States (Hover, Selected, Expanded)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* All cells in a row (including sticky) share the same background */
+.data-table-view tbody tr:hover td {
+	background: var(--muted);
+}
+
+/* Selected row (primary tint) */
+.data-table-view tbody tr.selected td {
+	background: var(--dt-primary-tint-10);
+}
+
+.data-table-view tbody tr.selected:hover td {
+	background: var(--dt-primary-tint-15);
+}
+
+/* Checkbox-selected row (amber tint) */
+.data-table-view tbody tr.checkbox-selected td {
+	background: var(--dt-amber-tint-8);
+}
+
+.data-table-view tbody tr.checkbox-selected:hover td {
+	background: var(--dt-amber-tint-12);
+}
+
+/* Row with expanded content below */
+.data-table-view tbody tr.row-expanded td {
+	background: var(--dt-muted-tint-50);
+	border-bottom: none;
+}
+
+.data-table-view tbody tr.row-expanded:hover td {
+	background: var(--dt-muted-tint-70);
+}
+
+/* Expanded row content cell */
+.data-table-view tbody tr.expanded-row td {
+	padding: 0;
+	background: transparent;
+	border-bottom: 1px solid var(--border);
+	overflow: hidden;
+}
+
+.data-table-view tbody tr.expanded-row:hover td {
+	background: transparent;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Nested Grid Overrides (Inside Expanded Rows)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.data-table-view.nested-grid {
+	border: none;
+	min-width: 0;
+	width: auto;
+}
+
+/* Nested grid headers */
+.data-table-view.nested-grid thead {
+	background: transparent !important;
+}
+
+.data-table-view.nested-grid thead th {
+	background: transparent !important;
+	border-bottom: 1px solid var(--dt-border-header);
+	padding-top: 0.25rem !important;
+	padding-bottom: 0.25rem !important;
+}
+
+.data-table-view.nested-grid thead th:first-child,
+.data-table-view.nested-grid thead th:last-child,
+.data-table-view.nested-grid thead th.actions-col {
+	background: transparent !important;
+	box-shadow: none !important;
+	clip-path: none !important;
+}
+
+/* Nested grid first/last columns are NOT sticky */
+.data-table-view.nested-grid th:first-child {
+	width: unset !important;
+	min-width: 0 !important;
+	max-width: none !important;
+}
+
+.data-table-view.nested-grid td:first-child {
+	width: unset !important;
+	min-width: 0 !important;
+	max-width: none !important;
+	position: static !important;
+}
+
+.data-table-view.nested-grid td:last-child {
+	position: static !important;
+}
+
+/* Nested grid body cells */
+.data-table-view.nested-grid tbody td {
+	background: transparent;
+	border-right: none;
+	border-bottom: 1px solid var(--dt-border-subtle);
+}
+
+.data-table-view.nested-grid tbody td:first-child,
+.data-table-view.nested-grid tbody td:last-child,
+.data-table-view.nested-grid tbody td.actions-col {
+	background: transparent;
+}
+
+.data-table-view.nested-grid tbody tr:hover td {
+	background: var(--dt-muted-tint-30);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Column Resize Handles
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.resize-handle {
+	position: absolute;
+	top: 0;
+	right: -2px;
+	width: 5px;
+	height: 100%;
+	cursor: col-resize;
+	background: transparent;
+	z-index: 5;
+}
+
+.resize-handle:hover,
+.resize-handle:active {
+	background: var(--dt-resize-handle-hover);
+}
+
+/* Left-side resize handle for fixed end columns */
+.resize-handle-left {
+	right: auto;
+	left: -2px;
+	z-index: 15;
+}
