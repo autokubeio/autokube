@@ -9,7 +9,7 @@
 	import MetricsCell from '$lib/components/metrics-cell.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson, parseCpu, parseMemory } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -132,6 +132,35 @@
 		return result;
 	});
 
+	// ── SSE batch buffer ────────────────────────────────────────────────────
+	// The K8s watch protocol sends an initial burst of ADDED events for every
+	// existing pod when it first connects. Without batching, 1000 pods = 1000
+	// sequential state mutations, each triggering all derived computations →
+	// O(n²) work that completely freezes the main thread.
+	// We accumulate events in a plain (non-reactive) buffer and flush them in
+	// a single state write on the next macrotask.
+	let _pendingAdds: Pod[] = [];
+	let _addBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function flushPendingAdds() {
+		_addBatchTimer = null;
+		if (_pendingAdds.length === 0) return;
+		const batch = _pendingAdds.splice(0); // drain buffer
+		const existingKeys = new Set(allPods.map((p) => `${p.namespace}/${p.name}`));
+		const fresh = batch.filter((p) => !existingKeys.has(`${p.namespace}/${p.name}`));
+		if (fresh.length > 0) allPods = [...allPods, ...fresh]; // one state update
+	}
+
+	function queueAdd(pod: Pod) {
+		_pendingAdds.push(pod);
+		if (!_addBatchTimer) _addBatchTimer = setTimeout(flushPendingAdds, 50);
+	}
+
+	function cancelPendingAdds() {
+		if (_addBatchTimer) { clearTimeout(_addBatchTimer); _addBatchTimer = null; }
+		_pendingAdds = [];
+	}
+
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
 	let podsWatch: ReturnType<typeof useResourceWatch<Pod>> | null = null;
 	let metricsWatch: ReturnType<typeof useMetricsWatch> | null = null;
@@ -146,14 +175,13 @@
 
 			if (podsWatch) podsWatch.unsubscribe();
 			if (metricsWatch) metricsWatch.unsubscribe();
+			cancelPendingAdds();
 
 			podsWatch = useResourceWatch<Pod>({
 				clusterId: activeCluster.id,
 				resourceType: 'pods',
 				namespace: ns,
-				onAdded: (pod) => {
-					allPods = arrayAdd(allPods, pod, (p) => `${p.namespace}/${p.name}`);
-				},
+				onAdded: queueAdd,
 				onModified: (pod) => {
 					allPods = arrayModify(allPods, pod, (p) => `${p.namespace}/${p.name}`);
 				},
@@ -182,6 +210,7 @@
 			podsWatch.subscribe();
 			metricsWatch.subscribe();
 		} else {
+			cancelPendingAdds();
 			allPods = [];
 			namespaces = [];
 			metricsMap = new Map();
@@ -197,6 +226,7 @@
 	});
 
 	onDestroy(() => {
+		cancelPendingAdds();
 		podsWatch?.unsubscribe();
 		metricsWatch?.unsubscribe();
 		timeTicker.stop();
@@ -412,6 +442,7 @@
 				keyField="name"
 				name={TableName.pods}
 				columns={visibleColumns}
+				virtualScroll={true}
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
