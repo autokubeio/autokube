@@ -97,6 +97,7 @@ jobs:
       - name: Bump chart version to ${{ needs.docker.outputs.version }}
         run: |
           cd autokube-charts/charts/autokube
+          sed -i "s/^version:.*/version: \"${{ needs.docker.outputs.version }}\"/"       Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${{ needs.docker.outputs.version }}\"/" Chart.yaml
           sed -i "s/tag:.*/tag: \"${{ needs.docker.outputs.version }}\"/"                values.yaml
 
