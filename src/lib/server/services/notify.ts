@@ -1,6 +1,7 @@
 /**
  * Notification sending — server-only.
  * Handles SMTP (via nodemailer) and Apprise URL schemes.
+ * Natively supports: Telegram, Discord, Slack, Generic Webhook (JSON/JSONS).
  */
 
 import type { AppriseConfig, SmtpConfig, ResolvedChannel } from '../queries';
@@ -11,6 +12,11 @@ const TEST_BODY = 'This is a test notification from AutoKube — your channel is
 /** Escape HTML special characters for Telegram HTML parse mode */
 function escapeHtml(text: string): string {
 	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Escape Markdown special characters for Discord */
+function escapeMarkdown(text: string): string {
+	return text.replace(/([*_~`|\\])/g, '\\$1');
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -86,8 +92,20 @@ async function sendAppriseUrl(url: string, title: string, body: string): Promise
 		return sendTelegram(url, formatTelegramHtml(title, body));
 	}
 
+	if (lower.startsWith('discord://')) {
+		return sendDiscord(url, title, body);
+	}
+
+	if (lower.startsWith('slack://')) {
+		return sendSlack(url, title, body);
+	}
+
+	if (lower.startsWith('json://') || lower.startsWith('jsons://')) {
+		return sendGenericWebhook(url, title, body);
+	}
+
 	// Generic fallback: Apprise REST API
-	const appriseApiUrl = process.env.APPRISE_API_URL;
+	const appriseApiUrl = Bun.env.APPRISE_API_URL;
 	if (appriseApiUrl) {
 		const res = await fetch(`${appriseApiUrl}/notify`, {
 			method: 'POST',
@@ -165,5 +183,225 @@ async function sendTelegram(url: string, html: string): Promise<void> {
 		if (!data.ok) {
 			throw new Error(`Telegram API error: ${data.description ?? 'unknown error'}`);
 		}
+	}
+}
+
+// ── Discord ──────────────────────────────────────────────────────────────────
+
+/**
+ * Format title + body as a Discord embed.
+ * Parses "label: value" lines into embed fields for rich rendering.
+ */
+function formatDiscordEmbed(
+	title: string,
+	body: string
+): { title: string; description: string; color: number; fields: { name: string; value: string; inline: boolean }[]; footer: { text: string } } {
+	const lines = body.split('\n').filter(Boolean);
+	const fields: { name: string; value: string; inline: boolean }[] = [];
+	const descriptionLines: string[] = [];
+
+	for (const line of lines) {
+		// "emoji Label: value" → embed field
+		const labelMatch = line.match(/^(.+?):\s+(.+)$/u);
+		if (labelMatch) {
+			fields.push({
+				name: labelMatch[1].trim(),
+				value: escapeMarkdown(labelMatch[2].trim()),
+				inline: true
+			});
+			continue;
+		}
+		// 💬 message lines → description
+		const msgMatch = line.match(/^💬\s+(.+)$/u);
+		if (msgMatch) {
+			descriptionLines.push(`> _${escapeMarkdown(msgMatch[1])}_`);
+			continue;
+		}
+		descriptionLines.push(escapeMarkdown(line));
+	}
+
+	// Use orange for warning emojis, blue otherwise
+	const isWarning = title.includes('⚠️') || title.includes('🔴');
+	const color = isWarning ? 0xff6600 : 0x3498db;
+
+	return {
+		title,
+		description: descriptionLines.join('\n') || body,
+		color,
+		fields: fields.slice(0, 25), // Discord allows max 25 fields
+		footer: { text: 'autokube.io' }
+	};
+}
+
+/**
+ * Parse discord://WebhookID/WebhookToken and send via Discord Webhook API.
+ * URL format: discord://WebhookID/WebhookToken
+ */
+async function sendDiscord(url: string, title: string, body: string): Promise<void> {
+	const path = url.replace(/^discord:\/\//i, '');
+	const parts = path.split('/').filter(Boolean);
+	if (parts.length < 2) {
+		throw new Error(
+			'Invalid discord:// URL. Expected format: discord://WebhookID/WebhookToken'
+		);
+	}
+
+	const webhookId = parts[0];
+	const webhookToken = parts[1];
+	const embed = formatDiscordEmbed(title, body);
+
+	const res = await fetch(
+		`https://discord.com/api/webhooks/${webhookId}/${webhookToken}`,
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				username: 'AutoKube',
+				embeds: [embed]
+			})
+		}
+	);
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => res.statusText);
+		throw new Error(`Discord Webhook error: ${res.status} ${text}`);
+	}
+}
+
+// ── Slack ────────────────────────────────────────────────────────────────────
+
+/**
+ * Format title + body into Slack Block Kit blocks for rich rendering.
+ */
+function formatSlackBlocks(
+	title: string,
+	body: string
+): { type: string; text?: { type: string; text: string }; elements?: { type: string; text: string }[]; fields?: { type: string; text: string }[] }[] {
+	const lines = body.split('\n').filter(Boolean);
+	const fields: { type: string; text: string }[] = [];
+	const contextLines: string[] = [];
+
+	for (const line of lines) {
+		// "emoji Label: value" → section field
+		const labelMatch = line.match(/^(.+?):\s+(.+)$/u);
+		if (labelMatch) {
+			fields.push({
+				type: 'mrkdwn',
+				text: `*${labelMatch[1].trim()}*\n${labelMatch[2].trim()}`
+			});
+			continue;
+		}
+		// 💬 message lines → context
+		const msgMatch = line.match(/^💬\s+(.+)$/u);
+		if (msgMatch) {
+			contextLines.push(`_${msgMatch[1]}_`);
+			continue;
+		}
+		contextLines.push(line);
+	}
+
+	const blocks: { type: string; text?: { type: string; text: string }; elements?: { type: string; text: string }[]; fields?: { type: string; text: string }[] }[] = [
+		{
+			type: 'header',
+			text: { type: 'plain_text', text: title }
+		}
+	];
+
+	// Add fields in groups of 10 (Slack limit per section)
+	for (let i = 0; i < fields.length; i += 10) {
+		blocks.push({
+			type: 'section',
+			fields: fields.slice(i, i + 10)
+		});
+	}
+
+	if (contextLines.length > 0) {
+		blocks.push({
+			type: 'context',
+			elements: [{ type: 'mrkdwn', text: contextLines.join('\n') }]
+		});
+	}
+
+	blocks.push({
+		type: 'context',
+		elements: [{ type: 'mrkdwn', text: 'autokube.io' }]
+	});
+
+	return blocks;
+}
+
+/**
+ * Parse slack://TokenA/TokenB/TokenC and send via Slack Incoming Webhook API.
+ * URL format: slack://TokenA/TokenB/TokenC
+ * Maps to: https://hooks.slack.com/services/TokenA/TokenB/TokenC
+ */
+async function sendSlack(url: string, title: string, body: string): Promise<void> {
+	const path = url.replace(/^slack:\/\//i, '');
+	const parts = path.split('/').filter(Boolean);
+	if (parts.length < 3) {
+		throw new Error(
+			'Invalid slack:// URL. Expected format: slack://TokenA/TokenB/TokenC'
+		);
+	}
+
+	const [tokenA, tokenB, tokenC] = parts;
+	const webhookUrl = `https://hooks.slack.com/services/${tokenA}/${tokenB}/${tokenC}`;
+	const blocks = formatSlackBlocks(title, body);
+
+	const res = await fetch(webhookUrl, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			text: `${title}\n${body}`,
+			blocks
+		})
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => res.statusText);
+		throw new Error(`Slack Webhook error: ${res.status} ${text}`);
+	}
+}
+
+// ── Generic Webhook (JSON) ───────────────────────────────────────────────────
+
+/**
+ * Parse json:// or jsons:// URL and POST a JSON payload.
+ * URL format: json://hostname[:port][/path]  (HTTP)
+ *             jsons://hostname[:port][/path] (HTTPS)
+ *
+ * Sends a structured JSON payload with title, body, and metadata.
+ */
+async function sendGenericWebhook(url: string, title: string, body: string): Promise<void> {
+	const isHttps = url.toLowerCase().startsWith('jsons://');
+	const protocol = isHttps ? 'https' : 'http';
+	// Strip the scheme and reconstruct as http(s)
+	const rest = url.replace(/^jsons?:\/\//i, '');
+
+	if (!rest) {
+		throw new Error(
+			'Invalid json:// URL. Expected format: json://hostname[:port][/path]'
+		);
+	}
+
+	const webhookUrl = `${protocol}://${rest}`;
+
+	const payload = {
+		title,
+		body,
+		message: `${title}\n\n${body}`,
+		source: 'autokube',
+		timestamp: new Date().toISOString()
+	};
+
+	const res = await fetch(webhookUrl, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(payload)
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => res.statusText);
+		throw new Error(`Webhook error: ${res.status} ${text}`);
 	}
 }

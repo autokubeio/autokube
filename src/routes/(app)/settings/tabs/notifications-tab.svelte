@@ -20,7 +20,10 @@
 		CheckCircle2,
 		AlertCircle,
 		Loader2,
-		ChevronDown
+		ChevronDown,
+		MessageCircle,
+		Hash,
+		Webhook
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { NOTIFICATION_EVENT_TYPES } from '$lib/notifications-constants';
@@ -52,7 +55,8 @@
 		smtpFromName: 'AutoKube Alerts',
 		smtpTo: '',
 		// apprise
-		appriseUrl: ''
+		appriseUrl: '',
+		appriseScheme: 'tgram' as 'tgram' | 'discord' | 'slack' | 'json' | 'custom'
 	});
 
 	let errors = $state<Record<string, string>>({});
@@ -96,7 +100,8 @@
 			smtpFromAddress: '',
 			smtpFromName: 'AutoKube Alerts',
 			smtpTo: '',
-			appriseUrl: ''
+			appriseUrl: '',
+			appriseScheme: 'tgram'
 		};
 		errors = {};
 		testResult = '';
@@ -121,10 +126,12 @@
 				smtpFromAddress: String(cfg.from_email ?? ''),
 				smtpFromName: String(cfg.from_name ?? ''),
 				smtpTo: Array.isArray(cfg.to_emails) ? (cfg.to_emails as string[]).join(', ') : '',
-				appriseUrl: ''
+				appriseUrl: '',
+				appriseScheme: 'tgram'
 			};
 		} else {
 			const urls = Array.isArray(cfg.urls) ? (cfg.urls as string[]) : [];
+			const url = urls[0] ?? '';
 			form = {
 				name: ch.name,
 				enabled: ch.enabled,
@@ -138,13 +145,24 @@
 				smtpFromAddress: '',
 				smtpFromName: 'AutoKube Alerts',
 				smtpTo: '',
-				appriseUrl: urls[0] ?? ''
+				appriseUrl: url,
+				appriseScheme: detectScheme(url)
 			};
 		}
 		errors = {};
 		testResult = '';
 		testSuccess = null;
 		dialogOpen = true;
+	}
+
+	/** Detect Apprise scheme from URL for the sub-type selector. */
+	function detectScheme(url: string): 'tgram' | 'discord' | 'slack' | 'json' | 'custom' {
+		const lower = url.toLowerCase();
+		if (lower.startsWith('tgram://')) return 'tgram';
+		if (lower.startsWith('discord://')) return 'discord';
+		if (lower.startsWith('slack://')) return 'slack';
+		if (lower.startsWith('json://') || lower.startsWith('jsons://')) return 'json';
+		return 'custom';
 	}
 
 	function validate(): boolean {
@@ -255,13 +273,71 @@
 				return `${scheme}${visible}••••${rest ?? ''}`;
 			});
 		}
+		// discord://WebhookID/WebhookToken — mask the token
+		if (/^discord:\/\//i.test(url)) {
+			return url.replace(/(discord:\/\/[^/]+\/)(.+)$/i, (_, prefix, token) => {
+				return `${prefix}${token.slice(0, 4)}••••`;
+			});
+		}
+		// slack://TokenA/TokenB/TokenC — mask TokenB and TokenC
+		if (/^slack:\/\//i.test(url)) {
+			return url.replace(/(slack:\/\/[^/]+\/)(.+)$/i, (_, prefix) => {
+				return `${prefix}••••/••••`;
+			});
+		}
+		// json:// or jsons:// — show host, mask path
+		if (/^jsons?:\/\//i.test(url)) {
+			const match = url.match(/^(jsons?:\/\/[^/]+)(\/.*)?$/i);
+			if (match) return `${match[1]}${match[2] ? '/••••' : ''}`;
+		}
 		// Generic: mask user:pass@host style credentials
 		return url.replace(/(:\/\/[^:@]*:[^@]*)@/, '://••••@').replace(/(\/[^/]{4})[^/]+$/, '$1••••');
+	}
+
+	/** Get a friendly label for the Apprise URL scheme shown in the channel list. */
+	function channelSchemeLabel(url: string): string {
+		const lower = url.toLowerCase();
+		if (lower.startsWith('tgram://')) return 'Telegram';
+		if (lower.startsWith('discord://')) return 'Discord';
+		if (lower.startsWith('slack://')) return 'Slack';
+		if (lower.startsWith('json://') || lower.startsWith('jsons://')) return 'Webhook';
+		return 'Apprise';
 	}
 
 	function channelsForEvent(eventId: string): ResolvedChannel[] {
 		return channels.filter((ch) => ch.enabled && ch.eventTypes.includes(eventId as never));
 	}
+
+	// ── Apprise scheme helpers ─────────────────────────────────────────────
+	const appriseSchemeLabel = $derived(
+		({
+			tgram: 'Telegram Bot URL',
+			discord: 'Discord Webhook URL',
+			slack: 'Slack Webhook URL',
+			json: 'Webhook endpoint URL',
+			custom: 'Any Apprise URL'
+		})[form.appriseScheme]
+	);
+
+	const apprisePlaceholder = $derived(
+		({
+			tgram: 'tgram://BotToken/ChatID',
+			discord: 'discord://WebhookID/WebhookToken',
+			slack: 'slack://TokenA/TokenB/TokenC',
+			json: 'json://hostname:port/path  or  jsons://hostname/path',
+			custom: 'scheme://...'
+		})[form.appriseScheme]
+	);
+
+	const appriseHelpText = $derived(
+		({
+			tgram: 'Create a bot via @BotFather, then use tgram://BOT_TOKEN/CHAT_ID. Multiple chat IDs: tgram://TOKEN/ID1/ID2',
+			discord: 'Go to Server Settings → Integrations → Webhooks → Copy URL, then use discord://WEBHOOK_ID/WEBHOOK_TOKEN',
+			slack: 'Create an Incoming Webhook in your Slack app, then use slack://TOKEN_A/TOKEN_B/TOKEN_C from the webhook URL',
+			json: 'POST a JSON payload to any HTTP endpoint. Use json:// for HTTP, jsons:// for HTTPS',
+			custom: 'Any Apprise-compatible URL. Requires APPRISE_API_URL env var for unsupported schemes.'
+		})[form.appriseScheme]
+	);
 
 	/** Check if a specific channel is subscribed to an event (regardless of enabled state) */
 	function isChannelSubscribed(channelId: number, eventId: string): boolean {
@@ -358,7 +434,17 @@
 				<!-- Icon -->
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-full border bg-muted">
 					{#if ch.type === 'apprise'}
-						<Zap class="size-4 text-yellow-500" />
+						{@const urls = (ch.config as unknown as { urls?: string[] }).urls ?? []}
+						{@const scheme = urls[0]?.toLowerCase() ?? ''}
+						{#if scheme.startsWith('discord://')}
+							<MessageCircle class="size-4 text-indigo-500" />
+						{:else if scheme.startsWith('slack://')}
+							<Hash class="size-4 text-green-500" />
+						{:else if scheme.startsWith('json://') || scheme.startsWith('jsons://')}
+							<Webhook class="size-4 text-orange-500" />
+						{:else}
+							<Zap class="size-4 text-yellow-500" />
+						{/if}
 					{:else}
 						<Mail class="size-4 text-blue-500" />
 					{/if}
@@ -369,7 +455,12 @@
 					<div class="flex flex-wrap items-center gap-1.5">
 						<span class="text-sm font-medium">{ch.name}</span>
 						<Badge variant="secondary" class="font-mono text-[10px] capitalize">
-							{ch.type === 'apprise' ? 'Apprise' : 'SMTP'}
+							{#if ch.type === 'apprise'}
+								{@const urls = (ch.config as unknown as { urls?: string[] }).urls ?? []}
+								{channelSchemeLabel(urls[0] ?? '')}
+							{:else}
+								SMTP
+							{/if}
 						</Badge>
 						{#if ch.enabled}
 							<Badge variant="outline" class="text-[10px]">
@@ -653,23 +744,65 @@
 			{:else}
 				<!-- Apprise Fields -->
 				<div class="space-y-1.5">
+					<Label>Service</Label>
+					<div class="grid grid-cols-5 gap-1.5">
+						<button
+							type="button"
+							class="flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors hover:bg-muted/60 {form.appriseScheme === 'tgram' ? 'border-primary bg-primary/5 text-primary' : 'text-muted-foreground'}"
+							onclick={() => (form.appriseScheme = 'tgram')}
+						>
+							<Send class="size-4" />
+							Telegram
+						</button>
+						<button
+							type="button"
+							class="flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors hover:bg-muted/60 {form.appriseScheme === 'discord' ? 'border-primary bg-primary/5 text-primary' : 'text-muted-foreground'}"
+							onclick={() => (form.appriseScheme = 'discord')}
+						>
+							<MessageCircle class="size-4" />
+							Discord
+						</button>
+						<button
+							type="button"
+							class="flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors hover:bg-muted/60 {form.appriseScheme === 'slack' ? 'border-primary bg-primary/5 text-primary' : 'text-muted-foreground'}"
+							onclick={() => (form.appriseScheme = 'slack')}
+						>
+							<Hash class="size-4" />
+							Slack
+						</button>
+						<button
+							type="button"
+							class="flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors hover:bg-muted/60 {form.appriseScheme === 'json' ? 'border-primary bg-primary/5 text-primary' : 'text-muted-foreground'}"
+							onclick={() => (form.appriseScheme = 'json')}
+						>
+							<Webhook class="size-4" />
+							Webhook
+						</button>
+						<button
+							type="button"
+							class="flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors hover:bg-muted/60 {form.appriseScheme === 'custom' ? 'border-primary bg-primary/5 text-primary' : 'text-muted-foreground'}"
+							onclick={() => (form.appriseScheme = 'custom')}
+						>
+							<Zap class="size-4" />
+							Custom
+						</button>
+					</div>
+				</div>
+
+				<div class="space-y-1.5">
 					<Label for="apprise-url"
-						>Apprise URL <span class="text-xs text-muted-foreground">Notification service URL</span
+						>Apprise URL <span class="text-xs text-muted-foreground">{appriseSchemeLabel}</span
 						></Label
 					>
 					<Input
 						id="apprise-url"
-						placeholder="tgram://bottoken/chatid"
+						placeholder={apprisePlaceholder}
 						bind:value={form.appriseUrl}
 						class={errors.appriseUrl ? 'border-destructive' : ''}
 					/>
 					{#if errors.appriseUrl}<p class="text-xs text-destructive">{errors.appriseUrl}</p>{/if}
 					<p class="text-xs text-muted-foreground">
-						Supports Telegram, Slack, Discord, and 80+ more via <a
-							href="https://github.com/caronc/apprise"
-							target="_blank"
-							class="underline">Apprise</a
-						>
+						{appriseHelpText}
 					</p>
 				</div>
 			{/if}
