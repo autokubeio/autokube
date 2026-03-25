@@ -181,6 +181,12 @@ AutoKube is licensed under the **[Business Source License 1.1](./LICENSE)** (BSL
 - **Professional**: support@autokube.io (48-hour response)
 - **Enterprise**: Dedicated Slack channel
 
+<a href="https://buymeacoffee.com/autokube" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+       alt="Buy Me A Coffee"
+       height="40">
+</a>
+
 ## Security
 
 Found a security vulnerability? Please email security@autokube.io (PGP key available).
@@ -198,11 +204,6 @@ See [autokube.io/privacy](https://autokube.io/privacy) for our security practice
 - [ ] Backup/restore automation
 
 Vote on features: [GitHub Discussions](https://github.com/autokubeio/autokube/discussions/categories/feature-requests)
-
-## Community
-
-- **Twitter**: [@autokubeio](https://twitter.com/autokubeio)
-- **Blog**: https://autokube.io/blog
 
 ## Acknowledgments
 
