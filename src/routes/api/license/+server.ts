@@ -19,6 +19,7 @@ interface LicenseStatusResponse extends LicenseValidation {
 	isEnterprise: boolean;
 	daysUntilExpiry?: number | null;
 	hostname: string;
+	hostnameEnvSet: boolean;
 }
 
 interface LicenseActivationRequest {
@@ -52,7 +53,8 @@ export const GET: RequestHandler = async ({ cookies }) => {
 			...status,
 			isEnterprise,
 			daysUntilExpiry,
-			hostname
+			hostname,
+			hostnameEnvSet: !!process.env.AUTOKUBE_HOSTNAME
 		} satisfies LicenseStatusResponse);
 	} catch (error) {
 		console.error('[License API] Failed to get license status:', error);
@@ -63,6 +65,7 @@ export const GET: RequestHandler = async ({ cookies }) => {
 				active: false,
 				isEnterprise: false,
 				hostname: getHostname(),
+				hostnameEnvSet: !!process.env.AUTOKUBE_HOSTNAME,
 				error: 'Failed to retrieve license status'
 			} satisfies LicenseStatusResponse,
 			{ status: 500 }

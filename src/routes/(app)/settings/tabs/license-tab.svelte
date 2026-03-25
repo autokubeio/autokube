@@ -34,6 +34,7 @@
 		active: boolean;
 		isEnterprise: boolean;
 		hostname: string;
+		hostnameEnvSet: boolean;
 		daysUntilExpiry?: number | null;
 		stored?: {
 			name: string;
@@ -247,6 +248,22 @@
 		</p>
 	</div>
 
+	{#if !status.hostnameEnvSet}
+		<div class="mt-4 flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3">
+			<AlertTriangle class="mt-0.5 size-4 shrink-0 text-yellow-500" />
+			<div class="min-w-0 flex-1 text-sm">
+				<p class="font-medium text-yellow-600 dark:text-yellow-400">Hostname may change unexpectedly</p>
+				<p class="mt-1 text-muted-foreground">
+					<code class="rounded bg-muted px-1 py-0.5 text-xs font-mono">AUTOKUBE_HOSTNAME</code> is not set.
+					The hostname is read from the OS and can change (e.g. after a reboot or network change), which will invalidate your license.
+				</p>
+				<p class="mt-1.5 text-xs text-muted-foreground">
+					Set <code class="rounded bg-muted px-1 py-0.5 font-mono">AUTOKUBE_HOSTNAME=your-hostname</code> to pin the hostname and prevent this.
+				</p>
+			</div>
+		</div>
+	{/if}
+
 	<div class="mt-4">
 		<div class="flex items-center gap-4 rounded-lg border bg-card px-4 py-3">
 			<div class="flex size-9 shrink-0 items-center justify-center rounded-full border bg-muted">
@@ -336,6 +353,22 @@
 			Your license will be validated against this hostname
 		</p>
 	</div>
+
+	{#if !status?.hostnameEnvSet}
+		<div class="mt-4 flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3">
+			<AlertTriangle class="mt-0.5 size-4 shrink-0 text-yellow-500" />
+			<div class="min-w-0 flex-1 text-sm">
+				<p class="font-medium text-yellow-600 dark:text-yellow-400">Hostname may change unexpectedly</p>
+				<p class="mt-1 text-muted-foreground">
+					<code class="rounded bg-muted px-1 py-0.5 text-xs font-mono">AUTOKUBE_HOSTNAME</code> is not set.
+					The hostname is read from the OS and can change (e.g. after a reboot or network change), which will invalidate your license.
+				</p>
+				<p class="mt-1.5 text-xs text-muted-foreground">
+					Set <code class="rounded bg-muted px-1 py-0.5 font-mono">AUTOKUBE_HOSTNAME=your-hostname</code> to pin the hostname and prevent this.
+				</p>
+			</div>
+		</div>
+	{/if}
 
 	<div class="mt-4">
 		<div class="flex items-center gap-4 rounded-lg border bg-card px-4 py-3">
