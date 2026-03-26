@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "bunx --bun vite dev",
 		"build": "bunx --bun vite build && bun run post-build",
-		"post-build": "bun ./scripts/generate-build-info.ts",
+		"post-build": "bun ./scripts/generate-build-info.ts && bun ./scripts/patch-production-ws.ts",
 		"start": "bun ./build/index.js",
 		"preview": "bunx --bun vite preview",
 		"prepare": "svelte-kit sync || echo ''",

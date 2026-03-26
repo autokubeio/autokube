@@ -432,7 +432,9 @@ async function agentRequest<T = unknown>(
 		k8sPath,
 		options.method ?? 'GET',
 		options.body,
-		options.headers,
+		options.body
+			? { 'Content-Type': 'application/json', ...options.headers }
+			: options.headers,
 		timeout
 	);
 
@@ -797,6 +799,12 @@ function formatK8sError(error: unknown): string {
 	if (msg.includes('http 404') || msg.includes('not found')) {
 		// Don't log 404s - they're expected for optional resources
 		return 'Resource not found';
+	}
+
+	// 409 / already exists — expected when creating resources that already exist (e.g. namespace)
+	if (msg.includes('http 409') || msg.includes('alreadyexists') || msg.includes('already exists')) {
+		// Don't log — callers decide whether this is an error
+		return error.message;
 	}
 
 	// Server errors

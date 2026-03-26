@@ -5,6 +5,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
 	plugins: [bunExternals(), devAgentWebSocketPlugin(), tailwindcss(), sveltekit()],
+	server: {
+		allowedHosts: true
+	},
 	optimizeDeps: {
 		include: ['lucide-svelte']
 	},

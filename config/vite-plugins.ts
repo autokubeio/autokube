@@ -77,6 +77,7 @@ export function devAgentWebSocketPlugin(): Plugin {
 
 			const bunServer = Bun.serve({
 				port: AGENT_WS_PORT,
+				hostname: '0.0.0.0',
 				fetch(req, srv) {
 					const url = new URL(req.url);
 
@@ -143,13 +144,19 @@ export function devAgentWebSocketPlugin(): Plugin {
 			// ── Discovery middleware on port 5173 ─────────────────────────────
 			// The agent fetches GET /api/agent/discover on the main Vite port
 			// before connecting via WebSocket.  This tells it where to connect.
-			server.middlewares.use('/api/agent/discover', (_req, res) => {
+			// We derive the hostname from the Host header so agents running inside
+			// Docker get back "host.docker.internal" instead of "localhost", and
+			// they can reach the Bun-native WS server on port 15173 directly.
+			//
+			// NOTE: Bun's node:http compat layer has a broken WS socket in dev
+			// mode, so WS proxying through port 5173 is not possible. The agent
+			// MUST connect directly to the Bun native WS server on port 15173.
+			// Deploy the agent with url=http://host.docker.internal:5173 so this
+			// discovery returns ws://host.docker.internal:15173.
+			server.middlewares.use('/api/agent/discover', (req, res) => {
+				const host = req.headers['host']?.split(':')[0] ?? 'localhost';
 				res.setHeader('Content-Type', 'application/json');
-				res.end(
-					JSON.stringify({
-						wsUrl: `ws://localhost:${bunServer.port}/api/agent/ws`
-					})
-				);
+				res.end(JSON.stringify({ wsUrl: `ws://${host}:${bunServer.port}/api/agent/ws` }));
 			});
 		}
 	};
