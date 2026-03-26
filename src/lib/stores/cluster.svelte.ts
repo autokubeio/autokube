@@ -38,6 +38,8 @@ export interface ClusterInfo {
 	cpuCritThreshold: number;
 	memWarnThreshold: number;
 	memCritThreshold: number;
+	/** Whether image scanning is enabled for this cluster */
+	scanEnabled: boolean;
 }
 
 let active = $state<ClusterInfo | null>(null);
@@ -89,6 +91,7 @@ export const clusterStore = {
 			cpuCritThreshold: c.cpuCritThreshold ?? 80,
 			memWarnThreshold: c.memWarnThreshold ?? 60,
 			memCritThreshold: c.memCritThreshold ?? 80,
+			scanEnabled: c.scanEnabled ?? false,
 			}));
 
 			// Validate active cluster still exists in the fresh list

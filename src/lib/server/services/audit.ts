@@ -87,7 +87,7 @@ export async function getAuditContext(event: AuditRequestEvent): Promise<AuditCo
 
 	return {
 		userId: auth.user?.id ?? null,
-		username: auth.user?.username ?? 'anonymous',
+		username: auth.user?.username ?? 'system',
 		ipAddress: extractIpAddress(event),
 		userAgent: event.request.headers.get('user-agent') || null
 	};

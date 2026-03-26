@@ -651,8 +651,7 @@
 							}}
 							class="flex h-full min-h-[24px] w-full cursor-pointer items-center justify-center transition-colors"
 							class:opacity-100={rowState.isSelected}
-							class:opacity-0={!rowState.isSelected}
-							class:group-hover:opacity-40={!rowState.isSelected}
+							class:opacity-40={!rowState.isSelected}
 						>
 							{@render selectIcon(rowState.isSelected)}
 						</button>

@@ -25,7 +25,10 @@
 		Globe,
 		Settings2,
 		HardDrive,
-		Shield
+		Shield,
+		ScanSearch,
+		Download,
+		Trash2
 	} from 'lucide-svelte';
 	import type { ClusterPublic } from '$lib/stores/clusters.svelte';
 	import LabelPicker, { DEFAULT_LABELS } from '$lib/components/label-picker.svelte';
@@ -99,6 +102,60 @@
 	let agentTokenRegenerated = $state(false); // true only when user explicitly clicked regenerate in edit mode
 	let copiedToken = $state(false);
 	let copiedHelm = $state(false);
+
+	// ── Vulnerability scanning ────────────────────────────────────────────────
+
+	let scanEnabled = $state(false);
+	let scannerPreference = $state<'grype' | 'trivy' | 'both'>('both');
+
+	interface ScannerStatus {
+		id: string;
+		name: string;
+		installed: boolean;
+		version: string | null;
+		loading: boolean;
+	}
+
+	let scanners = $state<ScannerStatus[]>([]);
+	let scannersLoading = $state(false);
+
+	async function loadScanners() {
+		scannersLoading = true;
+		try {
+			const res = await fetch('/api/scanners');
+			if (res.ok) {
+				const data = await res.json();
+				scanners = (data.scanners ?? []).map((s: { id: string; name: string; installed: boolean; version: string | null }) => ({ ...s, loading: false }));
+			}
+		} catch (err) {
+			console.error('[ClusterDialog] Failed to load scanners:', err);
+		} finally {
+			scannersLoading = false;
+		}
+	}
+
+	async function handleScannerAction(scannerId: string, action: 'install' | 'remove' | 'check') {
+		const idx = scanners.findIndex((s) => s.id === scannerId);
+		if (idx === -1) return;
+		scanners[idx].loading = true;
+		try {
+			const res = await fetch('/api/scanners', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action, scanner: scannerId })
+			});
+			if (res.ok) {
+				await loadScanners();
+			} else {
+				const data = await res.json();
+				console.error('[ClusterDialog] Scanner action failed:', data.error);
+			}
+		} catch (err) {
+			console.error('[ClusterDialog] Scanner action error:', err);
+		} finally {
+			if (scanners[idx]) scanners[idx].loading = false;
+		}
+	}
 
 	function generateToken(explicit = false) {
 		const arr = new Uint8Array(24);
@@ -184,9 +241,13 @@
 	// Per-channel notif config: Record<channelId, NotifGroups>
 	let channelNotif = $state<Record<number, NotifGroups>>({});
 	let expandedChannels = $state<number[]>([]);
+	let hadInitialBindings = $state(false);
 
 	$effect(() => {
-		if (open) loadChannels();
+		if (open) {
+			loadChannels();
+			loadScanners();
+		}
 	});
 
 	async function loadChannels() {
@@ -258,6 +319,9 @@
 				memWarnThreshold = String(cluster.memWarnThreshold ?? 60);
 				memCritThreshold = String(cluster.memCritThreshold ?? 80);
 
+				scanEnabled = cluster.scanEnabled ?? false;
+				scannerPreference = (cluster.scannerPreference as 'grype' | 'trivy' | 'both') ?? 'both';
+
 				// Load existing notification bindings
 				loadClusterBindings(cluster.id);
 			}
@@ -283,6 +347,7 @@
 				}
 				channelNotif = loaded;
 				expandedChannels = expanded;
+				hadInitialBindings = expanded.length > 0;
 			}
 		} catch (err) {
 			console.error('[ClusterDialog] Failed to load notification bindings:', err);
@@ -312,6 +377,9 @@
 		memWarnThreshold = '60';
 		memCritThreshold = '80';
 		metricsServer = true;
+		scanEnabled = false;
+		scannerPreference = 'both';
+		scanners = [];
 		channelNotif = {};
 		expandedChannels = [];
 		errors = {};
@@ -418,7 +486,9 @@
 			cpuWarnThreshold: Number(cpuWarnThreshold) || 60,
 			cpuCritThreshold: Number(cpuCritThreshold) || 80,
 			memWarnThreshold: Number(memWarnThreshold) || 60,
-			memCritThreshold: Number(memCritThreshold) || 80
+			memCritThreshold: Number(memCritThreshold) || 80,
+			scanEnabled,
+			scannerPreference
 		};
 
 		try {
@@ -435,7 +505,7 @@
 			const data = await res.json();
 			const savedClusterId = data.id ?? cluster?.id ?? 0;
 
-			// Save notification bindings
+			// Save notification bindings — only if user configured channels OR we need to clear existing ones
 			if (Object.keys(channelNotif).length > 0 && savedClusterId) {
 				try {
 					await fetch(`/api/clusters/${savedClusterId}/notifications`, {
@@ -451,8 +521,8 @@
 				} catch (err) {
 					console.error('[ClusterDialog] Failed to save notification bindings:', err);
 				}
-			} else if (savedClusterId) {
-				// No channels enabled — clear all bindings
+			} else if (savedClusterId && hadInitialBindings) {
+				// Only clear bindings if there were previously-saved bindings to clear
 				try {
 					await fetch(`/api/clusters/${savedClusterId}/notifications`, {
 						method: 'PUT',
@@ -522,6 +592,7 @@
 					<Tabs.Trigger value="general" class="flex-1 text-xs">General</Tabs.Trigger>
 					<Tabs.Trigger value="connection" class="flex-1 text-xs">Connection</Tabs.Trigger>
 					<Tabs.Trigger value="metrics" class="flex-1 text-xs">Metrics</Tabs.Trigger>
+					<Tabs.Trigger value="security" class="flex-1 text-xs">Security</Tabs.Trigger>
 					<Tabs.Trigger value="notifications" class="flex-1 text-xs">Notifications</Tabs.Trigger>
 				</Tabs.List>
 
@@ -863,6 +934,69 @@
 				</Tabs.Content>
 
 				<!-- ── Notifications Tab ───────────────────────────────────── -->
+				<!-- ── Security Tab ─────────────────────────────────────────── -->
+				<Tabs.Content value="security" class="mt-3 flex-1 space-y-4 overflow-y-auto px-0">
+					<p class="text-[11px] text-muted-foreground">Configure vulnerability scanning for container images in this cluster.</p>
+
+					<!-- Enable scanning toggle -->
+					<div class="flex items-center justify-between rounded-lg border px-3 py-2.5">
+						<div class="flex items-center gap-2">
+							<ScanSearch class="size-4 text-muted-foreground" />
+							<div>
+								<p class="text-xs font-medium">Enable Scanning</p>
+								<p class="text-[10px] text-muted-foreground">Scan container images for known vulnerabilities</p>
+							</div>
+						</div>
+						<Switch checked={scanEnabled} onCheckedChange={(v) => (scanEnabled = v)} />
+					</div>
+
+					{#if scanEnabled}
+						<!-- In-cluster scanning info -->
+						<div class="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
+							<div class="flex items-start gap-2">
+								<Globe class="mt-0.5 size-3.5 shrink-0 text-primary" />
+								<div>
+									<p class="text-xs font-medium text-primary">In-Cluster Scanning</p>
+									<p class="mt-0.5 text-[10px] text-muted-foreground">
+										Scans run as Jobs inside the cluster. Private registries are 
+										accessible and images are not re-downloaded to the server.
+									</p>
+								</div>
+							</div>
+						</div>
+
+						<!-- Scanner preference -->
+						<div class="space-y-2">
+							<Label class="text-xs">Scanner Preference</Label>
+							<div class="grid grid-cols-3 gap-2">
+								{#each [{ id: 'grype', label: 'Grype' }, { id: 'trivy', label: 'Trivy' }, { id: 'both', label: 'Both' }] as opt (opt.id)}
+									<button
+										type="button"
+										class={cn(
+											'rounded-md border px-3 py-2 text-xs font-medium transition-colors',
+											scannerPreference === opt.id
+												? 'border-primary bg-primary/10 text-primary'
+												: 'text-muted-foreground hover:bg-muted'
+										)}
+										onclick={() => (scannerPreference = opt.id as 'grype' | 'trivy' | 'both')}
+									>
+										{opt.label}
+									</button>
+								{/each}
+							</div>
+							<p class="text-[10px] text-muted-foreground">
+								{#if scannerPreference === 'both'}
+									Uses Grype first, falls back to Trivy if unavailable.
+								{:else if scannerPreference === 'grype'}
+									Uses Grype for all vulnerability scans.
+								{:else}
+									Uses Trivy for all vulnerability scans.
+								{/if}
+							</p>
+						</div>
+					{/if}
+				</Tabs.Content>
+
 				<Tabs.Content value="notifications" class="mt-3 flex-1 space-y-3 overflow-y-auto px-0">
 					<p class="text-[11px] text-muted-foreground">Configure which events each notification channel receives for this cluster.</p>
 

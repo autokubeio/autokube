@@ -4,6 +4,8 @@ import { findCluster, patchCluster, destroyCluster } from '$lib/server/queries/c
 import { logAuditEvent } from '$lib/server/queries/audit';
 import { invalidateClusterConfigCache } from '$lib/server/services/kubernetes/utils';
 import { authorize } from '$lib/server/services/authorize';
+import { upsertScanSchedule, listScanSchedules } from '$lib/server/queries/image-scans';
+import { getScanScheduleCron } from '$lib/server/queries/settings';
 
 function safeCluster(c: NonNullable<Awaited<ReturnType<typeof findCluster>>>) {
 	const { kubeconfig, bearerToken, tlsCa: ___, agentToken: ____, ...rest } = c;
@@ -44,13 +46,48 @@ export const PATCH: RequestHandler = async ({ request, params, getClientAddress,
 			cpuWarnThreshold: body.cpuWarnThreshold != null ? Number(body.cpuWarnThreshold) : undefined,
 			cpuCritThreshold: body.cpuCritThreshold != null ? Number(body.cpuCritThreshold) : undefined,
 			memWarnThreshold: body.memWarnThreshold != null ? Number(body.memWarnThreshold) : undefined,
-			memCritThreshold: body.memCritThreshold != null ? Number(body.memCritThreshold) : undefined
+			memCritThreshold: body.memCritThreshold != null ? Number(body.memCritThreshold) : undefined,
+			scanEnabled: body.scanEnabled != null ? Boolean(body.scanEnabled) : undefined,
+			scannerPreference: body.scannerPreference ?? undefined
 		});
 
 		if (!updated) return json({ error: 'Cluster not found' }, { status: 404 });
 
 		// Invalidate cached connection config so next request uses new credentials
 		invalidateClusterConfigCache(Number(params.id));
+
+		// Sync scan schedule when scanEnabled changes
+		if (body.scanEnabled != null) {
+			try {
+				const [existing] = await listScanSchedules(Number(params.id));
+				if (body.scanEnabled) {
+					// Create or re-enable the schedule
+					const globalCron = await getScanScheduleCron();
+					await upsertScanSchedule({
+						clusterId: Number(params.id),
+						enabled: true,
+						cronExpression: existing?.cronExpression ?? globalCron,
+						namespaces: existing?.namespaces ?? null,
+						lastRunAt: existing?.lastRunAt ?? null,
+						nextRunAt: existing?.nextRunAt ?? null
+					});
+					console.log(`[API] Auto-enabled scan schedule for cluster #${params.id}`);
+				} else if (existing) {
+					// Disable the existing schedule
+					await upsertScanSchedule({
+						clusterId: Number(params.id),
+						enabled: false,
+						cronExpression: existing.cronExpression,
+						namespaces: existing.namespaces ?? null,
+						lastRunAt: existing.lastRunAt ?? null,
+						nextRunAt: existing.nextRunAt ?? null
+					});
+					console.log(`[API] Auto-disabled scan schedule for cluster #${params.id}`);
+				}
+			} catch (schedErr) {
+				console.error(`[API] Failed to sync scan schedule for cluster #${params.id}:`, schedErr);
+			}
+		}
 
 		// Strip sensitive auth fields from audit details
 		const { kubeconfig: _, bearerToken: __, tlsCa: ___, agentToken: ____, ...safeDetails } = body;
@@ -61,11 +98,12 @@ export const PATCH: RequestHandler = async ({ request, params, getClientAddress,
 		if (body.agentToken !== undefined) maskedDetails.agentToken = '***';
 
 		await logAuditEvent({
-			username: 'system',
+			username: auth.user?.username ?? 'system',
 			action: 'update',
 			entityType: 'cluster',
 			entityId: params.id,
 			entityName: updated.name,
+			clusterId: Number(params.id),
 			description: `Updated cluster "${updated.name}"`,
 			details: maskedDetails,
 			ipAddress: getClientAddress(),
@@ -92,7 +130,7 @@ export const DELETE: RequestHandler = async ({ request, params, getClientAddress
 		invalidateClusterConfigCache(Number(params.id));
 
 		await logAuditEvent({
-			username: 'system',
+			username: auth.user?.username ?? 'system',
 			action: 'delete',
 			entityType: 'cluster',
 			entityId: params.id,

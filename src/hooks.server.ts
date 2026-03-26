@@ -3,6 +3,7 @@ import type { Handle } from '@sveltejs/kit';
 import { loadAuthConfig } from '$lib/server/queries/auth-settings';
 import { getSession } from '$lib/server/queries/sessions';
 import { startNotificationMonitor } from '$lib/server/services/notification-monitor';
+import { initScanScheduler } from '$lib/server/services/scan-scheduler';
 import {
 	validateAgentToken,
 	handleAgentOpen,
@@ -16,6 +17,9 @@ await initializeDatabase();
 
 // Start background notification monitor (cluster health, license expiry)
 startNotificationMonitor();
+
+// Start background scan scheduler (cron-based image vulnerability scans)
+initScanScheduler();
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const { pathname } = event.url;

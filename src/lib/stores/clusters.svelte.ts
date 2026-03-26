@@ -19,6 +19,8 @@ export interface ClusterPublic {
 	cpuCritThreshold?: number | null;
 	memWarnThreshold?: number | null;
 	memCritThreshold?: number | null;
+	scanEnabled?: boolean | null;
+	scannerPreference?: string | null;
 }
 
 let clusters = $state<ClusterPublic[]>([]);

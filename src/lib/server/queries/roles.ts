@@ -28,6 +28,7 @@ export interface PermissionMap {
 	events: string[];
 	access_control: string[];
 	custom_resources: string[];
+	image_scans: string[];
 
 	/** Index signature for forward-compat with future resources. */
 	[resource: string]: string[];

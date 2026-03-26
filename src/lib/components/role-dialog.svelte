@@ -236,6 +236,16 @@
 				{ id: 'edit', label: 'Edit CRDs' },
 				{ id: 'delete', label: 'Delete CRDs' }
 			]
+		},
+		{
+			label: 'Image Scans',
+			icon: Shield,
+			resource: 'image_scans',
+			perms: [
+				{ id: 'view', label: 'View scan results' },
+				{ id: 'scan', label: 'Trigger scans' },
+				{ id: 'delete', label: 'Delete scan results' }
+			]
 		}
 	];
 

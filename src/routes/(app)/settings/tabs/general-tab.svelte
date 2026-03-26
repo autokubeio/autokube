@@ -3,6 +3,8 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Label } from '$lib/components/ui/label';
+	import { Input } from '$lib/components/ui/input';
+	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 	import { mode, setMode } from 'mode-watcher';
 	import {
@@ -15,8 +17,15 @@
 		BarChart3,
 		TableProperties,
 		Tags,
-		Trash2
+		Trash2,
+		ShieldCheck,
+		Clock,
+		Layers,
+		Loader2,
+		Save
 	} from 'lucide-svelte';
+	import { toast } from 'svelte-sonner';
+	import { onMount } from 'svelte';
 
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import {
@@ -38,6 +47,57 @@
 		const themeId = isDark ? settingsStore.darkTheme : settingsStore.lightTheme;
 		applyThemeClass(themeId);
 	});
+
+	// ── Scan settings (server-side) ───────────────────────────────────────
+
+	let scanCron = $state('0 2 * * *');
+	let scanConcurrency = $state(5);
+	let scanLoading = $state(true);
+	let scanSaving = $state(false);
+
+	const CONCURRENCY_OPTIONS = [1, 2, 3, 5, 8, 10, 15, 20];
+
+	onMount(async () => {
+		try {
+			const res = await fetch('/api/settings/scan');
+			if (res.ok) {
+				const data = await res.json();
+				scanCron = data.cronExpression ?? '0 2 * * *';
+				scanConcurrency = data.concurrency ?? 5;
+			}
+		} catch {
+			console.error('[Settings] Failed to load scan settings');
+		} finally {
+			scanLoading = false;
+		}
+	});
+
+	async function saveScanSettings() {
+		scanSaving = true;
+		try {
+			const res = await fetch('/api/settings/scan', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					cronExpression: scanCron,
+					concurrency: scanConcurrency
+				})
+			});
+			if (res.ok) {
+				const data = await res.json();
+				scanCron = data.cronExpression;
+				scanConcurrency = data.concurrency;
+				toast.success('Scan settings saved');
+			} else {
+				const data = await res.json();
+				toast.error(data.error ?? 'Failed to save scan settings');
+			}
+		} catch {
+			toast.error('Failed to save scan settings');
+		} finally {
+			scanSaving = false;
+		}
+	}
 </script>
 
 <div class="space-y-6">
@@ -340,4 +400,77 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Security Scanning -->
+	<Card.Root>
+		<Card.Header>
+			<Card.Title class="flex items-center gap-2 text-base">
+				<ShieldCheck class="size-4" />
+				Security Scanning
+			</Card.Title>
+			<Card.Description>Configure automated vulnerability scan schedule and concurrency.</Card.Description>
+		</Card.Header>
+		<Card.Content class="space-y-6">
+			{#if scanLoading}
+				<div class="flex items-center gap-2 text-sm text-muted-foreground">
+					<Loader2 class="size-4 animate-spin" />
+					Loading scan settings…
+				</div>
+			{:else}
+				<div class="grid grid-cols-2 gap-6">
+					<div class="space-y-2">
+						<Label class="flex items-center gap-1.5 text-sm">
+							<Clock class="size-3.5" />
+							Scan Schedule (Cron)
+						</Label>
+						<Input
+							bind:value={scanCron}
+							placeholder="0 2 * * *"
+							class="font-mono text-sm"
+						/>
+						<p class="text-xs text-muted-foreground">
+							UTC cron expression — e.g. <code class="rounded bg-muted px-1">0 2 * * *</code> = daily at 2 AM
+						</p>
+					</div>
+
+					<div class="space-y-2">
+						<Label class="flex items-center gap-1.5 text-sm">
+							<Layers class="size-3.5" />
+							Parallel Scans
+						</Label>
+						<Select.Root
+							type="single"
+							value={String(scanConcurrency)}
+							onValueChange={(v: string) => {
+								if (v) scanConcurrency = Number(v);
+							}}
+						>
+							<Select.Trigger class="w-fit">
+								{scanConcurrency} parallel {scanConcurrency === 1 ? 'scan' : 'scans'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each CONCURRENCY_OPTIONS as opt}
+									<Select.Item value={String(opt)}>{opt}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<p class="text-xs text-muted-foreground">
+							Number of images scanned simultaneously
+						</p>
+					</div>
+				</div>
+
+				<div class="flex justify-end">
+					<Button size="sm" onclick={saveScanSettings} disabled={scanSaving}>
+						{#if scanSaving}
+							<Loader2 class="size-4 animate-spin" />
+						{:else}
+							<Save class="size-4" />
+						{/if}
+						Save Scan Settings
+					</Button>
+				</div>
+			{/if}
+		</Card.Content>
+	</Card.Root>
 </div>

@@ -34,7 +34,8 @@ export enum TableName {
 	clusterroles = 'clusterroles',
 	rolebindings = 'rolebindings',
 	clusterrolebindings = 'clusterrolebindings',
-	helmreleases = 'helmreleases'
+	helmreleases = 'helmreleases',
+	imagescans = 'imagescans'
 }
 
 // Audit log table columns
@@ -377,4 +378,18 @@ export const helmReleasesColumns: ColumnConfig[] = [
 	{ id: 'revision', label: 'Rev', width: 65, minWidth: 55, sortable: true },
 	{ id: 'age', label: 'Age', width: 75, minWidth: 60, sortable: true, sortField: 'createdAt' },
 	{ id: 'actions', label: '', fixed: 'end', width: 80, resizable: false }
+];
+
+export const imageScansColumns: ColumnConfig[] = [	
+	{ id: 'select', label: '', fixed: 'start', width: 36, resizable: false },	
+	{ id: 'expand', label: '', fixed: 'start', width: 36, resizable: false },
+	{ id: 'image', label: 'Image', width: 250, minWidth: 200, grow: true, sortable: true },
+	{ id: 'tag', label: 'Tag', width: 120, minWidth: 80, sortable: true },
+	{ id: 'status', label: 'Status', width: 110, minWidth: 90, sortable: true },
+	{ id: 'critical', label: 'Critical', width: 80, minWidth: 65, sortable: true },
+	{ id: 'high', label: 'High', width: 70, minWidth: 55, sortable: true },
+	{ id: 'medium', label: 'Medium', width: 75, minWidth: 60, sortable: true },
+	{ id: 'low', label: 'Low', width: 65, minWidth: 50, sortable: true },
+	{ id: 'resource', label: 'Resource', width: 180, minWidth: 130, sortable: true },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
 ];

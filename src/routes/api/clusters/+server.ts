@@ -3,6 +3,8 @@ import type { RequestHandler } from './$types';
 import { listClusters, insertCluster } from '$lib/server/queries/clusters';
 import { logAuditEvent } from '$lib/server/queries/audit';
 import { authorize } from '$lib/server/services/authorize';
+import { upsertScanSchedule } from '$lib/server/queries/image-scans';
+import { getScanScheduleCron } from '$lib/server/queries/settings';
 
 /** Strip sensitive fields before sending to the client. */
 function safeCluster(c: Awaited<ReturnType<typeof insertCluster>>) {
@@ -67,15 +69,36 @@ export const POST: RequestHandler = async ({ request, getClientAddress, cookies 
 			cpuWarnThreshold: body.cpuWarnThreshold != null ? Number(body.cpuWarnThreshold) : 60,
 			cpuCritThreshold: body.cpuCritThreshold != null ? Number(body.cpuCritThreshold) : 80,
 			memWarnThreshold: body.memWarnThreshold != null ? Number(body.memWarnThreshold) : 60,
-			memCritThreshold: body.memCritThreshold != null ? Number(body.memCritThreshold) : 80
+			memCritThreshold: body.memCritThreshold != null ? Number(body.memCritThreshold) : 80,
+			scanEnabled: body.scanEnabled != null ? Boolean(body.scanEnabled) : false,
+			scannerPreference: body.scannerPreference ?? 'both'
 		});
 
+		// Auto-create a scan schedule if scanning is enabled for this cluster
+		if (cluster.scanEnabled) {
+			try {
+				const globalCron = await getScanScheduleCron();
+				await upsertScanSchedule({
+					clusterId: cluster.id,
+					enabled: true,
+					cronExpression: globalCron,
+					namespaces: null,
+					lastRunAt: null,
+					nextRunAt: null
+				});
+				console.log(`[API] Auto-created scan schedule for cluster #${cluster.id} with cron: ${globalCron}`);
+			} catch (schedErr) {
+				console.error(`[API] Failed to auto-create scan schedule for cluster #${cluster.id}:`, schedErr);
+			}
+		}
+
 		await logAuditEvent({
-			username: 'system',
+			username: auth.user?.username ?? 'system',
 			action: 'create',
 			entityType: 'cluster',
 			entityId: String(cluster.id),
 			entityName: cluster.name,
+			clusterId: cluster.id,
 			description: `Created cluster "${cluster.name}" (${authType})`,
 			ipAddress: getClientAddress(),
 			userAgent: request.headers.get('user-agent') ?? null

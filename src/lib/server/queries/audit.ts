@@ -86,7 +86,8 @@ export type AuditEntityType =
 	| 'resourcequota'
 	| 'limitrange'
 	| 'serviceaccount'
-	| 'hpa';
+	| 'hpa'
+	| 'image_scan';
 
 export interface AuditLogData {
 	id: number;

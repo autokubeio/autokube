@@ -35,7 +35,9 @@ const SCALAR_FIELDS: ReadonlyArray<keyof Cluster> = [
 	'cpuWarnThreshold',
 	'cpuCritThreshold',
 	'memWarnThreshold',
-	'memCritThreshold'
+	'memCritThreshold',
+	'scanEnabled',
+	'scannerPreference'
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -151,7 +153,9 @@ export async function insertCluster(
 			cpuWarnThreshold: input.cpuWarnThreshold ?? 60,
 			cpuCritThreshold: input.cpuCritThreshold ?? 80,
 			memWarnThreshold: input.memWarnThreshold ?? 60,
-			memCritThreshold: input.memCritThreshold ?? 80
+			memCritThreshold: input.memCritThreshold ?? 80,
+			scanEnabled: input.scanEnabled ?? false,
+			scannerPreference: input.scannerPreference ?? 'both'
 		})
 		.returning();
 

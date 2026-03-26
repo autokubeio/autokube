@@ -325,3 +325,25 @@ export async function setClusterPublicIp(clusterId: number, ip: string | null): 
 export async function deleteClusterPublicIp(clusterId: number): Promise<void> {
 	await setClusterPublicIp(clusterId, null);
 }
+
+// ── Security Scan Settings ──────────────────────────────────────────────────
+
+/** Global scan schedule cron expression (default: 2 AM daily). */
+export async function getScanScheduleCron(): Promise<string> {
+	return readStr('scan_schedule_cron', '0 2 * * *');
+}
+
+export async function setScanScheduleCron(cron: string): Promise<void> {
+	assertNonEmpty(cron, 'Scan schedule cron expression');
+	await setSetting('scan_schedule_cron', cron);
+}
+
+/** Max parallel image scans (default: 5, range 1–20). */
+export async function getScanConcurrency(): Promise<number> {
+	return readNum('scan_concurrency', 5);
+}
+
+export async function setScanConcurrency(n: number): Promise<void> {
+	assertRange(n, 1, 20, 'Scan concurrency');
+	await setSetting('scan_concurrency', n);
+}

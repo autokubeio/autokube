@@ -27,7 +27,7 @@ import {
 	Blocks,
 	Workflow,
 	Package,
-	History
+	History,
 } from 'lucide-svelte';
 
 export type IconComponent = typeof LayoutDashboard;
@@ -113,6 +113,17 @@ export const menuCategories: readonly MenuCategory[] = [
 				Icon: Link2,
 				label: 'Cluster Role Bindings',
 				permission: 'access_control'
+			}
+		]
+	},
+	{
+		label: 'Security',
+		items: [
+			{
+				href: '/security-scans',
+				Icon: ShieldCheck,
+				label: 'Image Scans',
+				permission: 'image_scans'
 			}
 		]
 	},

@@ -34,6 +34,9 @@ export const clusters = pgTable('clusters', {
 	cpuCritThreshold: integer('cpu_crit_threshold').default(80),
 	memWarnThreshold: integer('mem_warn_threshold').default(60),
 	memCritThreshold: integer('mem_crit_threshold').default(80),
+	// Vulnerability scanning
+	scanEnabled: bool('scan_enabled').default(false),
+	scannerPreference: text('scanner_preference').default('both'), // grype | trivy | both
 	// Provisioning link
 	isProvisioned: bool('is_provisioned').default(false),
 	provisionedClusterId: integer('provisioned_cluster_id').references(() => provisionedClusters.id, {
@@ -333,6 +336,69 @@ export const aiChatMessages = pgTable(
 	})
 );
 
+// ─── Image Security Scanning ─────────────────────────────────────────────────
+
+export const imageScans = pgTable(
+	'image_scans',
+	{
+		id,
+		clusterId: integer('cluster_id').references(() => clusters.id, { onDelete: 'cascade' }),
+		image: text('image').notNull(),
+		tag: text('tag'),
+		digest: text('digest'),
+		status: text('status').notNull().default('pending'), // pending | scanning | completed | failed
+		trigger: text('trigger').notNull().default('manual'), // manual | scheduled
+		resource: text('resource'),        // e.g. "deployment/nginx"
+		resourceNamespace: text('resource_namespace'),
+		scanner: text('scanner').default('trivy'),
+		summary: text('summary'),           // JSON { critical, high, medium, low, unknown }
+		errorMessage: text('error_message'),
+		startedAt: text('started_at'),
+		completedAt: text('completed_at'),
+		...timestamps
+	},
+	(t) => ({
+		clusterIdx: index('image_scans_cluster_idx').on(t.clusterId),
+		imageIdx: index('image_scans_image_idx').on(t.image),
+		statusIdx: index('image_scans_status_idx').on(t.status)
+	})
+);
+
+export const imageScanVulnerabilities = pgTable(
+	'image_scan_vulnerabilities',
+	{
+		id,
+		scanId: integer('scan_id')
+			.notNull()
+			.references(() => imageScans.id, { onDelete: 'cascade' }),
+		vulnerabilityId: text('vulnerability_id').notNull(), // CVE-XXXX-XXXXX
+		pkgName: text('pkg_name').notNull(),
+		installedVersion: text('installed_version'),
+		fixedVersion: text('fixed_version'),
+		severity: text('severity').notNull(), // CRITICAL | HIGH | MEDIUM | LOW | UNKNOWN
+		title: text('title'),
+		description: text('description'),
+		primaryUrl: text('primary_url'),
+		score: real('score'),                // CVSS score
+		createdAt
+	},
+	(t) => ({
+		scanIdx: index('image_scan_vulns_scan_idx').on(t.scanId),
+		severityIdx: index('image_scan_vulns_severity_idx').on(t.severity)
+	})
+);
+
+export const scanSchedules = pgTable('scan_schedules', {
+	id,
+	clusterId: integer('cluster_id').references(() => clusters.id, { onDelete: 'cascade' }),
+	enabled: bool('enabled').default(true),
+	cronExpression: text('cron_expression').notNull().default('0 2 * * *'), // daily at 2am
+	namespaces: text('namespaces'), // JSON string[] — null means all
+	lastRunAt: text('last_run_at'),
+	nextRunAt: text('next_run_at'),
+	...timestamps
+});
+
 // ─── Type Exports ────────────────────────────────────────────────────────────
 
 export type ClusterRow = typeof clusters.$inferSelect;
@@ -380,5 +446,12 @@ export type AiChatSession = typeof aiChatSessions.$inferSelect;
 export type NewAiChatSession = typeof aiChatSessions.$inferInsert;
 export type AiChatMessage = typeof aiChatMessages.$inferSelect;
 export type NewAiChatMessage = typeof aiChatMessages.$inferInsert;
+
+export type ImageScan = typeof imageScans.$inferSelect;
+export type NewImageScan = typeof imageScans.$inferInsert;
+export type ImageScanVulnerability = typeof imageScanVulnerabilities.$inferSelect;
+export type NewImageScanVulnerability = typeof imageScanVulnerabilities.$inferInsert;
+export type ScanSchedule = typeof scanSchedules.$inferSelect;
+export type NewScanSchedule = typeof scanSchedules.$inferInsert;
 
 
