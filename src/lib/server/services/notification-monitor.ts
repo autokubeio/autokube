@@ -11,11 +11,14 @@
 
 import { listClusters } from '../queries/clusters';
 import { listEnabledChannels, listAllEnabledBindingsWithConfig } from '../queries/notifications';
+import { getScansCompletedSince } from '../queries/image-scans';
+import type { ImageScanListItem } from '../queries/image-scans';
 import { getDaysUntilExpiry, getStoredLicense } from './license';
 import { sendAlert } from './notify';
 import { makeClusterRequest, getClusterConnectionConfig, buildRequestOptions } from './kubernetes/utils';
 import type { KubeconfigData, BearerTokenConnection } from './kubernetes/utils';
 import { matchK8sEvent } from '$lib/notifications-constants';
+import type { NotifGroups } from '$lib/notifications-constants';
 import type { ResolvedChannel, ResolvedClusterBinding, ChannelConfig } from '../queries/notifications';
 import https from 'node:https';
 
@@ -42,6 +45,8 @@ declare global {
 	var __notificationMonitorVersion: number;
 	/** Active K8s event watch streams per cluster */
 	var __notificationWatchStreams: Map<number, WatchStream>;
+	/** Timestamp of last vulnerability scan check */
+	var __notificationLastScanCheck: string;
 }
 
 // ── Version-based zombie interval protection ────────────────────────────────
@@ -74,6 +79,7 @@ globalThis.__notificationMonitorInitialized ??= false;
 globalThis.__notificationLastAlertSent ??= new Map<string, number>();
 globalThis.__notificationClusterStatus ??= new Map<number, 'online' | 'offline'>();
 globalThis.__notificationWatchStreams ??= new Map<number, WatchStream>();
+globalThis.__notificationLastScanCheck ??= new Date().toISOString();
 
 /** Previous cluster status: clusterId → 'online' | 'offline' */
 const clusterStatusMap = globalThis.__notificationClusterStatus;
@@ -201,6 +207,145 @@ async function checkLicenseExpiry(channels: ResolvedChannel[]): Promise<void> {
 			title,
 			`Your AutoKube license for "${stored.name}" will expire in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.\n\nPlease renew your license to continue using enterprise features.`
 		);
+	}
+}
+
+// ── Vulnerability Scan Alert Check ──────────────────────────────────────────
+
+/**
+ * Check for recently completed vulnerability scans and send alerts
+ * based on per-cluster notification config (security.vulnerabilityScans).
+ */
+async function checkVulnerabilityScans(
+	allBindings: Array<ResolvedClusterBinding & { config: ChannelConfig }>
+): Promise<void> {
+	const since = globalThis.__notificationLastScanCheck;
+	globalThis.__notificationLastScanCheck = new Date().toISOString();
+
+	let recentScans: ImageScanListItem[];
+	try {
+		recentScans = await getScansCompletedSince(since);
+	} catch (err) {
+		console.error('[Monitor] Failed to fetch recent scans:', err);
+		return;
+	}
+
+	if (recentScans.length === 0) return;
+
+	// Group bindings by clusterId
+	const bindingsByCluster = new Map<number, Array<ResolvedClusterBinding & { config: ChannelConfig }>>();
+	for (const b of allBindings) {
+		const list = bindingsByCluster.get(b.clusterId) ?? [];
+		list.push(b);
+		bindingsByCluster.set(b.clusterId, list);
+	}
+
+	for (const scan of recentScans) {
+		if (!scan.clusterId) continue;
+		const bindings = bindingsByCluster.get(scan.clusterId);
+		if (!bindings) continue;
+
+		for (const binding of bindings) {
+			const cfg = binding.notifConfig;
+			if (!cfg?.security?.vulnerabilityScans) continue;
+
+			const scanCfg = cfg.security.vulnerabilityScans;
+			const imageTag = `${scan.image}:${scan.tag ?? 'latest'}`;
+			const summary = scan.parsedSummary;
+
+			// Scan failed alert
+			if (scan.status === 'failed' && scanCfg.scanFailed) {
+				const alertKey = `scan_failed:${scan.id}:${binding.notificationId}`;
+				if (canAlert(alertKey)) {
+					markAlerted(alertKey);
+					const channel: ResolvedChannel = {
+						id: binding.notificationId,
+						type: binding.channelType ?? 'apprise',
+						name: binding.channelName ?? 'Unknown',
+						enabled: true,
+						config: binding.config,
+						eventTypes: binding.eventTypes,
+						createdAt: binding.createdAt,
+						updatedAt: binding.updatedAt
+					};
+					sendAlert(
+						channel,
+						`❌ Scan failed: ${imageTag}`,
+						[
+							`📍 Cluster: ${scan.clusterName ?? `#${scan.clusterId}`}`,
+							scan.errorMessage ? `💬 ${scan.errorMessage}` : '',
+							`🕐 ${scan.completedAt ?? new Date().toISOString()}`
+						].filter(Boolean).join('\n')
+					).catch((err) => console.error('[Monitor] Failed to send scan-failed alert:', err));
+				}
+				continue;
+			}
+
+			if (scan.status !== 'completed' || !summary) continue;
+
+			// Scan completed alert
+			if (scanCfg.scanCompleted) {
+				const alertKey = `scan_completed:${scan.id}:${binding.notificationId}`;
+				if (canAlert(alertKey)) {
+					markAlerted(alertKey);
+					const channel: ResolvedChannel = {
+						id: binding.notificationId,
+						type: binding.channelType ?? 'apprise',
+						name: binding.channelName ?? 'Unknown',
+						enabled: true,
+						config: binding.config,
+						eventTypes: binding.eventTypes,
+						createdAt: binding.createdAt,
+						updatedAt: binding.updatedAt
+					};
+					sendAlert(
+						channel,
+						`✅ Scan completed: ${imageTag}`,
+						[
+							`📍 Cluster: ${scan.clusterName ?? `#${scan.clusterId}`}`,
+							`🔴 Critical: ${summary.critical}  🟠 High: ${summary.high}  🟡 Medium: ${summary.medium}  🔵 Low: ${summary.low}`,
+							`🕐 ${scan.completedAt ?? new Date().toISOString()}`
+						].join('\n')
+					).catch((err) => console.error('[Monitor] Failed to send scan-completed alert:', err));
+				}
+			}
+
+			// Severity-based alerts
+			const severityAlerts: Array<{ enabled: boolean; count: number; label: string; icon: string }> = [
+				{ enabled: scanCfg.criticalFound, count: summary.critical, label: 'CRITICAL', icon: '🔴' },
+				{ enabled: scanCfg.highFound, count: summary.high, label: 'HIGH', icon: '🟠' },
+				{ enabled: scanCfg.mediumFound, count: summary.medium, label: 'MEDIUM', icon: '🟡' }
+			];
+
+			for (const sev of severityAlerts) {
+				if (!sev.enabled || sev.count === 0) continue;
+				const alertKey = `scan_${sev.label.toLowerCase()}:${scan.id}:${binding.notificationId}`;
+				if (!canAlert(alertKey)) continue;
+				markAlerted(alertKey);
+
+				const channel: ResolvedChannel = {
+					id: binding.notificationId,
+					type: binding.channelType ?? 'apprise',
+					name: binding.channelName ?? 'Unknown',
+					enabled: true,
+					config: binding.config,
+					eventTypes: binding.eventTypes,
+					createdAt: binding.createdAt,
+					updatedAt: binding.updatedAt
+				};
+
+				sendAlert(
+					channel,
+					`${sev.icon} ${sev.count} ${sev.label} vulnerabilit${sev.count === 1 ? 'y' : 'ies'} found in ${imageTag}`,
+					[
+						`📍 Cluster: ${scan.clusterName ?? `#${scan.clusterId}`}`,
+						`📦 Image: ${imageTag}`,
+						`🔴 Critical: ${summary.critical}  🟠 High: ${summary.high}  🟡 Medium: ${summary.medium}  🔵 Low: ${summary.low}`,
+						`🕐 ${scan.completedAt ?? new Date().toISOString()}`
+					].join('\n')
+				).catch((err) => console.error(`[Monitor] Failed to send ${sev.label} CVE alert:`, err));
+			}
+		}
 	}
 }
 
@@ -516,12 +661,14 @@ function stopAllWatchStreams(): void {
  * Sync watch streams: start new ones, stop removed ones, update bindings.
  * Called periodically to pick up new clusters/bindings and clean up stale ones.
  */
-async function syncWatchStreams(): Promise<void> {
-	const allBindings = await listAllEnabledBindingsWithConfig();
+async function syncWatchStreams(
+	allBindings?: BindingWithConfig[]
+): Promise<void> {
+	const bindings = allBindings ?? await listAllEnabledBindingsWithConfig();
 
 	// Group bindings by clusterId
 	const bindingsByCluster = new Map<number, BindingWithConfig[]>();
-	for (const b of allBindings) {
+	for (const b of bindings) {
 		const list = bindingsByCluster.get(b.clusterId) ?? [];
 		list.push(b);
 		bindingsByCluster.set(b.clusterId, list);
@@ -573,8 +720,16 @@ async function runChecks(): Promise<void> {
 			await checkLicenseExpiry(channels);
 		}
 
+		// Fetch all enabled bindings (used by both watch streams and scan alerts)
+		const allBindings = await listAllEnabledBindingsWithConfig();
+
+		// Check for vulnerability scan results and dispatch alerts
+		if (allBindings.length > 0) {
+			await checkVulnerabilityScans(allBindings);
+		}
+
 		// Sync K8s event watch streams (start/stop/update as needed)
-		await syncWatchStreams();
+		await syncWatchStreams(allBindings);
 
 		// Mark initialized after first successful run
 		if (!initialized) {

@@ -371,6 +371,31 @@ export const NOTIF_GROUP_META: NotifGroupMeta[] = [
 				]
 			}
 		]
+	},
+	{
+		key: 'security',
+		label: 'Security Scanning',
+		icon: 'ScanSearch',
+		classes: {
+			headerBg: 'bg-red-500/5',
+			iconColor: 'text-red-500',
+			textColor: 'text-red-600 dark:text-red-400',
+			badgeBg: 'bg-red-500/10',
+			badgeText: 'text-red-600 dark:text-red-400'
+		},
+		resources: [
+			{
+				key: 'vulnerabilityScans',
+				label: 'Vulnerability Scans',
+				events: [
+					{ key: 'criticalFound', label: 'Critical CVEs found', description: 'Alert when critical severity vulnerabilities are detected' },
+					{ key: 'highFound', label: 'High CVEs found', description: 'Alert when high severity vulnerabilities are detected' },
+					{ key: 'mediumFound', label: 'Medium CVEs found', description: 'Alert when medium severity vulnerabilities are detected' },
+					{ key: 'scanCompleted', label: 'Scan completed', description: 'Alert when any vulnerability scan finishes' },
+					{ key: 'scanFailed', label: 'Scan failed', description: 'Alert when a vulnerability scan fails' }
+				]
+			}
+		]
 	}
 ];
 
@@ -412,6 +437,9 @@ export interface NotifGroups {
 		roleBindings: { created: boolean; deleted: boolean };
 		clusterRoleBindings: { created: boolean; deleted: boolean };
 	};
+	security: {
+		vulnerabilityScans: { criticalFound: boolean; highFound: boolean; mediumFound: boolean; scanCompleted: boolean; scanFailed: boolean };
+	};
 }
 
 export function defaultNotifGroups(): NotifGroups {
@@ -452,6 +480,9 @@ export function defaultNotifGroups(): NotifGroups {
 			clusterRoles: { created: true, updated: true, deleted: true },
 			roleBindings: { created: true, deleted: true },
 			clusterRoleBindings: { created: true, deleted: true }
+		},
+		security: {
+			vulnerabilityScans: { criticalFound: true, highFound: true, mediumFound: false, scanCompleted: false, scanFailed: true }
 		}
 	};
 }

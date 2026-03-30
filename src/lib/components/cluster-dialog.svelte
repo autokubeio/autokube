@@ -37,7 +37,7 @@
 	import type { ResolvedChannel } from '$lib/server/queries/notifications';
 	import { type NotifGroups, defaultNotifGroups, NOTIF_GROUP_META } from '$lib/notifications-constants';
 
-	const GROUP_ICONS: Record<string, typeof Layers> = { Layers, Globe, Settings2, HardDrive, Shield };
+	const GROUP_ICONS: Record<string, typeof Layers> = { Layers, Globe, Settings2, HardDrive, Shield, ScanSearch };
 
 	// ── Types ─────────────────────────────────────────────────────────────────
 
@@ -223,7 +223,7 @@
 
 	function notifTotal(g: NotifGroups): string {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const groups = [g.workload, g.network, g.configuration, g.storage, g.accessControl] as Record<string, any>[];
+		const groups = [g.workload, g.network, g.configuration, g.storage, g.accessControl, g.security] as Record<string, any>[];
 		let on = 0, total = 0;
 		for (const grp of groups) {
 			for (const events of Object.values(grp)) {

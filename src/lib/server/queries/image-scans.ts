@@ -458,3 +458,28 @@ export async function getScanStats(clusterId?: number) {
 		vulnerabilities: { critical, high, medium, low }
 	};
 }
+
+// ── Notification helpers ────────────────────────────────────────────────────
+
+/**
+ * Get scans completed or failed since a given timestamp.
+ * Used by the notification monitor to dispatch vulnerability alerts.
+ */
+export async function getScansCompletedSince(since: string): Promise<ImageScanListItem[]> {
+	const rows = await db
+		.select({
+			scan: imageScans,
+			clusterName: clusters.name
+		})
+		.from(imageScans)
+		.leftJoin(clusters, eq(imageScans.clusterId, clusters.id))
+		.where(
+			and(
+				sql`${imageScans.status} IN ('completed', 'failed')`,
+				sql`${imageScans.completedAt} > ${since}`
+			)
+		)
+		.orderBy(desc(imageScans.completedAt));
+
+	return rows.map((r) => mapScanRow(r.scan, r.clusterName));
+}
