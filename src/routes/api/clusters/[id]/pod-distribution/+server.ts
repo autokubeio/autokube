@@ -9,6 +9,7 @@ interface K8sPodItem {
 		name?: string;
 		namespace?: string;
 		labels?: Record<string, string>;
+		creationTimestamp?: string;
 		ownerReferences?: Array<{ kind: string; name: string }>;
 	};
 	spec: {
@@ -73,6 +74,7 @@ export const GET: RequestHandler = async ({ params, cookies }) => {
 			ownerName: string;
 			cpuRequest: string;
 			memoryRequest: string;
+			createdAt: string;
 		}>>();
 
 		if (podsResult.success && podsResult.data) {
@@ -110,7 +112,8 @@ export const GET: RequestHandler = async ({ params, cookies }) => {
 					ownerKind: owner?.kind || '',
 					ownerName: owner?.name || '',
 					cpuRequest: totalCpuRequest > 0 ? `${totalCpuRequest}m` : '0m',
-					memoryRequest: totalMemoryRequest > 0 ? `${Math.round(totalMemoryRequest / (1024 * 1024))}Mi` : '0Mi'
+					memoryRequest: totalMemoryRequest > 0 ? `${Math.round(totalMemoryRequest / (1024 * 1024))}Mi` : '0Mi',
+					createdAt: pod.metadata?.creationTimestamp || ''
 				});
 			}
 		}

@@ -16,11 +16,19 @@
 		Loader2,
 		ChevronDown,
 		ChevronRight,
-		Server
+		ChevronsUpDown,
+		Server,
+
+		ChevronsDownUp
+
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
 	import { clustersStore } from '$lib/stores/clusters.svelte';
 	import MetricsCell from '$lib/components/metrics-cell.svelte';
+	import NamespaceSelect from '$lib/components/namespace-select.svelte';
+	import NamespaceBadge from '$lib/components/namespace-badge.svelte';
+	import { formatCapacity } from '../nodes/columns';
+	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
 	import { onDestroy } from 'svelte';
 
@@ -36,6 +44,7 @@
 		ownerName: string;
 		cpuRequest: string;
 		memoryRequest: string;
+		createdAt?: string;
 	}
 
 	// Internal flat pod with its assigned node name
@@ -74,6 +83,7 @@
 		ready: string;
 		restarts: number;
 		node: string;
+		createdAt?: string;
 	}
 
 	interface WatchNode {
@@ -108,6 +118,7 @@
 	let searchQuery = $state('');
 	let sortBy = $state<'pods' | 'cpu' | 'memory' | 'name'>('pods');
 	let expandedNodes = $state<Set<string>>(new Set());
+	let selectedNamespace = $state('all');
 
 	// ── Derived: merge nodes + pods ──────────────────────────────────────────
 
@@ -124,6 +135,9 @@
 			podCount: podsByNode.get(node.name)?.length || 0
 		}));
 	});
+
+	const allNamespaces = $derived([...new Set(allPods.map((p) => p.namespace))].sort());
+	const timeTicker = createTimeTicker(10000);
 
 	// ── Computed ─────────────────────────────────────────────────────────────
 
@@ -161,6 +175,7 @@
 				: 'bg-red-500/10 border-red-500/20'
 	);
 
+	// maxPods is global (used in summary cards)
 	const maxPods = $derived(Math.max(...nodes.map((n) => n.podCount), 1));
 
 	// Nodes eligible for scale-down (0 pods or very few pods and no taints)
@@ -199,14 +214,31 @@
 			);
 		}
 
+		if (selectedNamespace !== 'all') {
+			result = result.filter((n) => n.pods.some((p) => p.namespace === selectedNamespace));
+		}
+
 		return [...result].sort((a, b) => {
 			switch (sortBy) {
 				case 'pods':
+					// When namespace is filtered, sort by pods in that namespace, not total
+					if (selectedNamespace !== 'all') {
+						const bNsPods = b.pods.filter((p) => p.namespace === selectedNamespace).length;
+						const aNsPods = a.pods.filter((p) => p.namespace === selectedNamespace).length;
+						return bNsPods - aNsPods;
+					}
 					return b.podCount - a.podCount;
 				case 'cpu':
-					return parseCpu(b.cpuUsage) - parseCpu(a.cpuUsage);
+					// Sort by utilisation % so nodes under pressure rank higher regardless of core count
+					return (
+						usagePercent(b.cpuUsage, b.cpuAllocatable) -
+						usagePercent(a.cpuUsage, a.cpuAllocatable)
+					);
 				case 'memory':
-					return parseMemory(b.memoryUsage) - parseMemory(a.memoryUsage);
+					return (
+						usagePercent(b.memoryUsage, b.memoryAllocatable) -
+						usagePercent(a.memoryUsage, a.memoryAllocatable)
+					);
 				case 'name':
 					return a.name.localeCompare(b.name);
 				default:
@@ -214,6 +246,14 @@
 			}
 		});
 	});
+
+	// filteredMaxPods/filteredAvgPods track the visible set for correct bar scaling and avg line
+	const filteredMaxPods = $derived(Math.max(...filteredNodes.map((n) => n.podCount), 1));
+	const filteredAvgPods = $derived(
+		filteredNodes.length > 0
+			? Math.round(filteredNodes.reduce((s, n) => s + n.podCount, 0) / filteredNodes.length)
+			: 0
+	);
 
 	// ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -280,6 +320,14 @@
 		expandedNodes = next;
 	}
 
+	function expandAll() {
+		expandedNodes = new Set(filteredNodes.map((n) => n.name));
+	}
+
+	function collapseAll() {
+		expandedNodes = new Set();
+	}
+
 	// ── Watch helpers ─────────────────────────────────────────────────────
 
 	function watchPodToFlat(pod: WatchPod): FlatPod {
@@ -293,6 +341,7 @@
 			ownerName: '',
 			cpuRequest: '0m',
 			memoryRequest: '0Mi',
+			createdAt: pod.createdAt,
 			nodeName: pod.node || ''
 		};
 	}
@@ -459,6 +508,7 @@
 		cancelPendingAdds();
 		podWatch?.unsubscribe();
 		nodeWatch?.unsubscribe();
+		timeTicker.stop();
 	});
 </script>
 
@@ -498,6 +548,14 @@
 					bind:value={searchQuery}
 				/>
 			</div>
+
+			{#if allNamespaces.length > 0}
+				<NamespaceSelect
+					namespaces={allNamespaces}
+					value={selectedNamespace}
+					onChange={(ns) => (selectedNamespace = ns)}
+				/>
+			{/if}
 
 			<!-- Sort select -->
 			<div class="flex items-center rounded-md border bg-muted/40 p-0.5">
@@ -655,13 +713,53 @@
 
 		<!-- ━━━ Distribution bar chart ━━━ -->
 		<div class="rounded-lg border bg-card">
-			<div class="border-b px-4 py-3">
+			<div class="border-b px-4 py-3 flex items-center justify-between">
 				<h2 class="text-sm font-medium">Pod Distribution by Node</h2>
+				{#if filteredNodes.length > 0}
+					<div class="flex items-center gap-1">
+						<button
+							class="inline-flex h-7 items-center gap-1 rounded px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+							onclick={expandAll}
+						>
+							<ChevronsUpDown class="size-3" />
+							Expand all
+						</button>
+						<button
+							class="inline-flex h-7 items-center gap-1 rounded px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+							onclick={collapseAll}
+						>
+                            <ChevronsDownUp class="size-3" />
+							Collapse all
+						</button>
+					</div>
+				{/if}
 			</div>
 			<div class="p-4 space-y-1.5">
+				{#if filteredNodes.length === 0}
+					<div class="flex flex-col items-center justify-center py-8 text-muted-foreground">
+						<HardDrive class="size-7 mb-2 opacity-30" />
+						<p class="text-sm">
+							{#if searchQuery.trim()}
+								No nodes match "{searchQuery}"
+							{:else if selectedNamespace !== 'all'}
+								No nodes have pods in "{selectedNamespace}"
+							{:else}
+								No nodes to display
+							{/if}
+						</p>
+						{#if searchQuery.trim() || selectedNamespace !== 'all'}
+							<button
+								class="mt-1.5 text-xs text-primary hover:underline"
+								onclick={() => { searchQuery = ''; selectedNamespace = 'all'; }}
+							>
+								Clear filters
+							</button>
+						{/if}
+					</div>
+				{:else}
 				{#each filteredNodes as node (node.name)}
 					{@const podDist = podDistSummary(node.pods)}
-					{@const barWidth = maxPods > 0 ? (node.podCount / maxPods) * 100 : 0}
+					{@const barWidth = filteredMaxPods > 0 ? (node.podCount / filteredMaxPods) * 100 : 0}
 					{@const podsAlloc = parseInt(node.podsAllocatable) || 110}
 					{@const podCapPct = Math.min(Math.round((node.podCount / podsAlloc) * 100), 100)}
 					{@const total = node.podCount || 1}
@@ -737,11 +835,11 @@
 												></div>
 											{/if}
 										</div>
-										<!-- Average line -->
-										{#if totalNodes > 1}
+										<!-- Average line (relative to visible nodes) -->
+										{#if filteredNodes.length > 1}
 											<div
 												class="absolute inset-y-0 w-px bg-foreground/30"
-												style="left: {(avgPodsPerNode / maxPods) * 100}%"
+												style="left: {filteredMaxPods > 0 ? (filteredAvgPods / filteredMaxPods) * 100 : 0}%"
 											></div>
 										{/if}
 									</div>
@@ -821,12 +919,14 @@
 												</tr>
 											</thead>
 											<tbody>
-												{#each node.pods as pod (pod.name)}
+												{#each node.pods.filter((p) => selectedNamespace === 'all' || p.namespace === selectedNamespace) as pod (pod.name)}
 													<tr class="border-b last:border-0 hover:bg-muted/30">
 														<td class="max-w-50 truncate px-3 py-1.5 font-mono text-[11px]">
 															{pod.name}
 														</td>
-														<td class="px-3 py-1.5 text-muted-foreground">{pod.namespace}</td>
+														<td class="px-3 py-1.5">
+												<NamespaceBadge namespace={pod.namespace} />
+											</td>
 														<td class="px-3 py-1.5">
 															<span
 																class={cn(
@@ -878,6 +978,7 @@
 						{/if}
 					</div>
 				{/each}
+				{/if}
 			</div>
 
 			<!-- Legend -->
@@ -894,9 +995,9 @@
 				<div class="flex items-center gap-1.5">
 					<span class="size-2 rounded-full bg-zinc-400"></span> Other
 				</div>
-				{#if totalNodes > 1}
+				{#if filteredNodes.length > 1}
 					<div class="flex items-center gap-1.5">
-						<span class="w-3 h-px bg-foreground/30"></span> Average ({avgPodsPerNode})
+						<span class="w-3 h-px bg-foreground/30"></span> Average ({filteredAvgPods})
 					</div>
 				{/if}
 			</div>
@@ -1033,6 +1134,10 @@
 										></div>
 									</div>
 									<span class="w-8 text-right tabular-nums text-muted-foreground">{memPct}%</span>
+								</div>
+								<div class="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+									<span>{formatCapacity(node.cpuAllocatable, 'cpu')} cores</span>
+									<span>{formatCapacity(node.memoryAllocatable, 'memory')}</span>
 								</div>
 							</div>
 						{/if}
