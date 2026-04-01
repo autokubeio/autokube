@@ -28,6 +28,7 @@ import {
 	Workflow,
 	Package,
 	History,
+	GitCompare,
 } from 'lucide-svelte';
 
 export type IconComponent = typeof LayoutDashboard;
@@ -48,6 +49,7 @@ export interface MenuCategory {
 export const topItems: readonly MenuItem[] = [
 	{ href: '/', Icon: LayoutDashboard, label: 'Dashboard', permission: 'always' },
 	{ href: '/resource-map', Icon: Workflow, label: 'Resource Map', permission: 'always' },
+	{ href: '/pod-distribution', Icon: GitCompare, label: 'Pod Distribution', permission: 'always' },
 	{ href: '/timeline', Icon: History, label: 'Timeline', permission: 'always' }
 ] as const;
 
