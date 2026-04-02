@@ -4,6 +4,7 @@ import { loadAuthConfig } from '$lib/server/queries/auth-settings';
 import { getSession } from '$lib/server/queries/sessions';
 import { startNotificationMonitor } from '$lib/server/services/notification-monitor';
 import { initScanScheduler } from '$lib/server/services/scan-scheduler';
+import { startMetricsCollector } from '$lib/server/services/metrics-collector';
 import {
 	validateAgentToken,
 	handleAgentOpen,
@@ -20,6 +21,9 @@ startNotificationMonitor();
 
 // Start background scan scheduler (cron-based image vulnerability scans)
 initScanScheduler();
+
+// Start background metrics collector (CPU sampling)
+startMetricsCollector();
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const { pathname } = event.url;
@@ -89,7 +93,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 		'/api/auth/oidc',
 		'/api/auth-settings',
 		'/api/agent/status',
-		'/api/sso/providers'
+		'/api/sso/providers',
+		'/metrics'
 	];
 	const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
 
