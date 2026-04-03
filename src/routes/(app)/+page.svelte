@@ -109,7 +109,7 @@
 	const allLabels = $derived.by(() => {
 		const set = new Set<string>();
 		for (const c of clusterStore.all) {
-			for (const l of c.labels) set.add(l);
+			for (const l of c.labels ?? []) set.add(l);
 		}
 		return [...set].sort();
 	});
