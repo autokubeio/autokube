@@ -1,11 +1,21 @@
-# AutoKube
+<p align="center">
+  <a href="https://autokube.io" target="_blank">
+    <img src="https://autokube.io/icon.svg" alt="AutoKube Logo" width="100">
+  </a>
+</p>
 
-A modern, self-hosted Kubernetes management platform built with SvelteKit and Bun.
+<h1 align="center">AutoKube</h1>
 
-![License](https://img.shields.io/badge/license-BSL_1.1-blue.svg)
-![Docker](https://img.shields.io/docker/v/autokubeio/autokube?label=docker)
-![Bun](https://img.shields.io/badge/runtime-Bun-orange)
-![Svelte](https://img.shields.io/badge/framework-SvelteKit_2_Svelte_5-red)
+<p align="center">
+  A modern, self-hosted Kubernetes management platform built with SvelteKit and Bun.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-BSL_1.1-blue.svg" alt="License">
+  <img src="https://img.shields.io/docker/v/autokubeio/autokube?label=docker" alt="Docker">
+  <img src="https://img.shields.io/badge/runtime-Bun-orange" alt="Bun">
+  <img src="https://img.shields.io/badge/framework-SvelteKit_2_Svelte_5-red" alt="Svelte">
+</p>
 
 ## Features
 
