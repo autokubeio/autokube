@@ -12,11 +12,13 @@
 	import LicenseTab from './tabs/license-tab.svelte';
 	import DangerZoneTab from './tabs/danger-zone-tab.svelte';
 	import AiTab from './tabs/ai-tab.svelte';
+	import ProvisioningTab from './tabs/provisioning-tab.svelte';
 
 	const settingsTabs = [
 		{ value: 'general', label: 'General' },
 		{ value: 'authentication', label: 'Authentication' },
 		{ value: 'cluster', label: 'Cluster' },
+		{ value: 'provisioning', label: 'Provisioning' },
 		{ value: 'ssh-keys', label: 'SSH Keys' },
 		{ value: 'notifications', label: 'Notifications' },
 		{ value: 'ai', label: 'AI Assistant' },
@@ -102,6 +104,10 @@
 			<AiTab />
 		</Tabs.Content>
 
+		<Tabs.Content value="provisioning" class="mt-3">
+			<ProvisioningTab />
+		</Tabs.Content>
+
 		<Tabs.Content value="license" class="mt-3">
 			<LicenseTab />
 		</Tabs.Content>
@@ -111,7 +117,7 @@
 		</Tabs.Content>
 
 		<!-- Placeholder tabs -->
-		{#each settingsTabs.filter((t) => !['general', 'authentication', 'about', 'ssh-keys', 'cluster', 'notifications', 'ai', 'license', 'danger-zone'].includes(t.value)) as tab}
+		{#each settingsTabs.filter((t) => !['general', 'authentication', 'about', 'ssh-keys', 'cluster', 'notifications', 'ai', 'provisioning', 'license', 'danger-zone'].includes(t.value)) as tab}
 			<Tabs.Content value={tab.value} class="mt-3">
 				<Card.Root>
 					<Card.Header>
