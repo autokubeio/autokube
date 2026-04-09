@@ -36,7 +36,7 @@
 		// Step 3 – Nodes
 		masterCount: number;
 		masterInstanceType: string;
-		masterLocation: string;
+		masterLocations: string[];
 		workerPools: WorkerPool[];
 		// Step 4 – Networking
 		networkZone: string;
@@ -59,6 +59,8 @@
 		count: number;
 		instanceType: string;
 		location: string;
+		labels: { key: string; value: string }[];
+		autoscaling: { enabled: boolean; minInstances: number; maxInstances: number };
 	}
 
 	export interface FirewallRule {
@@ -111,14 +113,16 @@
 		sshKeyId: null,
 		masterCount: 1,
 		masterInstanceType: 'cx22',
-		masterLocation: 'nbg1',
+		masterLocations: ['nbg1'],
 		workerPools: [
 			{
 				id: crypto.randomUUID(),
 				name: 'worker-pool-1',
 				count: 2,
 				instanceType: 'cx22',
-				location: 'nbg1'
+				location: 'nbg1',
+				labels: [],
+				autoscaling: { enabled: false, minInstances: 1, maxInstances: 5 }
 			}
 		],
 		networkZone: 'eu-central',
@@ -202,14 +206,16 @@
 			sshKeyId: null,
 			masterCount: 1,
 			masterInstanceType: 'cx22',
-			masterLocation: 'nbg1',
+			masterLocations: ['nbg1'],
 			workerPools: [
 				{
 					id: crypto.randomUUID(),
 					name: 'worker-pool-1',
 					count: 2,
 					instanceType: 'cx22',
-					location: 'nbg1'
+					location: 'nbg1',
+					labels: [],
+					autoscaling: { enabled: false, minInstances: 1, maxInstances: 5 }
 				}
 			],
 			networkZone: 'eu-central',
@@ -254,14 +260,16 @@
 			const mastersPoolConfig = {
 				count: data.masterCount,
 				instanceType: data.masterInstanceType,
-				location: data.masterLocation
+				locations: data.masterLocations
 			};
 
 			const workerPoolsConfig = data.workerPools.map((p) => ({
 				name: p.name,
 				count: p.count,
 				instanceType: p.instanceType,
-				location: p.location
+				location: p.location,
+				labels: p.labels,
+				autoscaling: p.autoscaling
 			}));
 
 			const networkingConfig = {

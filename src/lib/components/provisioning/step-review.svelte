@@ -66,8 +66,18 @@
 			</div>
 			<div class="space-y-1 text-xs">
 				<div class="flex justify-between gap-2"><span class="text-muted-foreground">Masters</span><span class="font-medium">{data.masterCount}× {data.masterInstanceType}</span></div>
+				<div class="flex justify-between gap-2"><span class="text-muted-foreground">Locations</span><span class="font-medium font-mono truncate">{data.masterLocations.join(', ')}</span></div>
 				{#each data.workerPools as pool}
-					<div class="flex justify-between gap-2"><span class="text-muted-foreground truncate">{pool.name}</span><span class="font-medium">{pool.count}× {pool.instanceType}</span></div>
+					<div class="flex justify-between gap-2">
+						<span class="text-muted-foreground truncate">{pool.name}</span>
+						<span class="font-medium">
+							{#if pool.autoscaling.enabled}
+								{pool.autoscaling.minInstances}–{pool.autoscaling.maxInstances}× {pool.instanceType}
+							{:else}
+								{pool.count}× {pool.instanceType}
+							{/if}
+						</span>
+					</div>
 				{/each}
 				<div class="flex justify-between gap-2 pt-1 border-t border-border"><span class="text-muted-foreground">Total</span><span class="font-semibold text-primary">{data.masterCount + totalWorkers} nodes</span></div>
 			</div>
