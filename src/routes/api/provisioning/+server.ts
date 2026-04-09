@@ -16,15 +16,17 @@ export const GET: RequestHandler = async ({ cookies }) => {
 	try {
 		const rows = await listProvisionedClusters();
 
-		// Determine which provisioned clusters have a kubeconfig linked
+		// Determine which provisioned clusters have a linked cluster row + kubeconfig
 		const linkedRows = await db
 			.select({ provisionedClusterId: clusters.provisionedClusterId, kubeconfig: clusters.kubeconfig })
 			.from(clusters)
 			.where(eq(clusters.isProvisioned, true));
 
 		const kubeconfigMap = new Map<number, boolean>();
+		const hasClusterRowMap = new Map<number, boolean>();
 		for (const r of linkedRows) {
 			if (r.provisionedClusterId != null) {
+				hasClusterRowMap.set(r.provisionedClusterId, true);
 				kubeconfigMap.set(r.provisionedClusterId, !!r.kubeconfig);
 			}
 		}
@@ -32,7 +34,12 @@ export const GET: RequestHandler = async ({ cookies }) => {
 		return json({
 			clusters: rows.map((c) => {
 				const { providerToken, ...rest } = c;
-				return { ...rest, hasProviderToken: !!providerToken, hasKubeconfig: kubeconfigMap.get(c.id) ?? false };
+				return {
+					...rest,
+					hasProviderToken: !!providerToken,
+					hasKubeconfig: kubeconfigMap.get(c.id) ?? false,
+					hasClusterRow: hasClusterRowMap.get(c.id) ?? false
+				};
 			})
 		});
 	} catch (err) {

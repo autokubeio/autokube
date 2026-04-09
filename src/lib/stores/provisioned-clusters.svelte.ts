@@ -10,6 +10,7 @@ export interface ProvisionedClusterPublic {
 	apiServerHostname: string | null;
 	hasProviderToken: boolean;
 	hasKubeconfig: boolean;
+	hasClusterRow: boolean;
 	networkingConfig: string | null;
 	mastersPoolConfig: string | null;
 	workerPoolsConfig: string | null;

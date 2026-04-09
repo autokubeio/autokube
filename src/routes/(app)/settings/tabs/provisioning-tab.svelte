@@ -23,7 +23,8 @@
 		Server,
 		ScrollText,
 		HeartPulse,
-		Download
+		Download,
+		PlusCircle
 	} from 'lucide-svelte';
 	import { provisionedClustersStore, type ProvisionedClusterPublic } from '$lib/stores/provisioned-clusters.svelte';
 	import ProvisioningWizard from '$lib/components/provisioning/provisioning-wizard.svelte';
@@ -133,6 +134,27 @@
 	let toggling = $state<number | null>(null);
 	let healthChecking = $state<number | null>(null);
 	let fetchingKubeconfig = $state<number | null>(null);
+	let relinking = $state<number | null>(null);
+
+	async function relinkCluster(cluster: ProvisionedClusterPublic) {
+		relinking = cluster.id;
+		try {
+			const res = await fetch(`/api/provisioning/${cluster.id}/relink`, { method: 'POST' });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error ?? 'Failed to re-add cluster');
+			if (data.fetchingKubeconfig) {
+				toast.success(`"${cluster.clusterName}" added — fetching kubeconfig in background`);
+				setTimeout(() => provisionedClustersStore.fetch(), 30_000);
+			} else {
+				toast.success(`"${cluster.clusterName}" added back to clusters list`);
+			}
+			await provisionedClustersStore.fetch();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to re-add cluster');
+		} finally {
+			relinking = null;
+		}
+	}
 
 	async function retryFetchKubeconfig(cluster: ProvisionedClusterPublic) {
 		fetchingKubeconfig = cluster.id;
@@ -392,6 +414,22 @@
 									<Loader2 class="size-3.5 animate-spin" />
 								{:else}
 									<Download class="size-3.5" />
+								{/if}
+							</Button>
+						{/if}
+						{#if !cluster.hasClusterRow}
+							<Button
+								variant="ghost"
+								size="icon"
+								class="size-7 text-blue-500 hover:text-blue-600"
+								title="Add back to clusters list"
+								onclick={() => relinkCluster(cluster)}
+								disabled={relinking === cluster.id}
+							>
+								{#if relinking === cluster.id}
+									<Loader2 class="size-3.5 animate-spin" />
+								{:else}
+									<PlusCircle class="size-3.5" />
 								{/if}
 							</Button>
 						{/if}
