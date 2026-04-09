@@ -5,6 +5,7 @@ export interface SshKeyPublic {
 	keyType: 'ed25519' | 'rsa';
 	publicKey: string;
 	fingerprint: string;
+	hasPrivateKey: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -39,7 +40,7 @@ export const sshKeysStore = {
 		}
 	},
 
-	async createPrivate(input: { name: string; description?: string; privateKey: string }) {
+	async createPrivate(input: { name: string; description?: string; privateKey: string; publicKey?: string }) {
 		const res = await fetch('/api/ssh-keys', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },

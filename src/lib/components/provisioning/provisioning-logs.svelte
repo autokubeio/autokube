@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { Button } from '$lib/components/ui/button';
-	import { RefreshCw, Trash2, Download, ScrollText } from 'lucide-svelte';
+	import { RefreshCw, Trash2, Download, ScrollText, Radio } from 'lucide-svelte';
 	import { provisionedClustersStore, type ProvisioningLog } from '$lib/stores/provisioned-clusters.svelte';
 	import { toast } from 'svelte-sonner';
 
-	let { clusterId, clusterName = '' }: { clusterId: number; clusterName?: string } = $props();
+	let { clusterId, clusterName = '', status = '' }: { clusterId: number; clusterName?: string; status?: string } = $props();
 
 	let logs = $state<ProvisioningLog[]>([]);
 	let loading = $state(false);
 	let clearing = $state(false);
+	let streaming = $state(false);
 	let logContainer = $state<HTMLDivElement | null>(null);
 	let autoScroll = $state(true);
+	let eventSource = $state<EventSource | null>(null);
 
 	const LEVEL_STYLES: Record<string, string> = {
 		info: 'text-sky-400',
@@ -39,6 +41,45 @@
 			loading = false;
 			if (autoScroll) scrollToBottom();
 		}
+	}
+
+	/** Start an SSE connection to tail live provisioning output. */
+	function startStreaming() {
+		if (eventSource) eventSource.close();
+
+		streaming = true;
+		logs = []; // clear stale data — SSE replays history first
+
+		const es = new EventSource(`/api/provisioning/${clusterId}/logs/stream`);
+		eventSource = es;
+
+		es.onmessage = (e) => {
+			try {
+				const entry = JSON.parse(e.data) as ProvisioningLog;
+				logs = [...logs, { ...entry, id: logs.length + 1 }];
+				if (autoScroll) scrollToBottom();
+			} catch {
+				// ignore malformed frames
+			}
+		};
+
+		es.addEventListener('done', () => {
+			streaming = false;
+			es.close();
+			eventSource = null;
+		});
+
+		es.onerror = () => {
+			streaming = false;
+			es.close();
+			eventSource = null;
+		};
+	}
+
+	function stopStreaming() {
+		eventSource?.close();
+		eventSource = null;
+		streaming = false;
 	}
 
 	async function clearLogs() {
@@ -86,7 +127,18 @@
 	}
 
 	$effect(() => {
-		if (clusterId) loadLogs();
+		if (clusterId) {
+			// Auto-start SSE when cluster is actively provisioning
+			if (status === 'provisioning') {
+				startStreaming();
+			} else {
+				loadLogs();
+			}
+		}
+		return () => {
+			// Clean up SSE on destroy
+			eventSource?.close();
+		};
 	});
 </script>
 
@@ -101,6 +153,12 @@
 					{logs.length}
 				</span>
 			{/if}
+			{#if streaming}
+				<span class="flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
+					<Radio class="size-3 animate-pulse" />
+					Live
+				</span>
+			{/if}
 		</div>
 		<div class="flex items-center gap-1">
 			<label class="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
@@ -111,16 +169,37 @@
 				/>
 				Auto-scroll
 			</label>
-			<Button
-				variant="ghost"
-				size="icon"
-				class="h-6 w-6"
-				onclick={loadLogs}
-				disabled={loading}
-				title="Refresh logs"
-			>
-				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
-			</Button>
+			{#if streaming}
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-6 w-6 text-emerald-500 hover:text-red-400"
+					onclick={stopStreaming}
+					title="Stop live streaming"
+				>
+					<Radio class="size-3" />
+				</Button>
+			{:else}
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-6 w-6"
+					onclick={startStreaming}
+					title="Stream live logs"
+				>
+					<Radio class="size-3" />
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-6 w-6"
+					onclick={loadLogs}
+					disabled={loading}
+					title="Refresh logs"
+				>
+					<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
+				</Button>
+			{/if}
 			<Button
 				variant="ghost"
 				size="icon"
@@ -136,7 +215,7 @@
 				size="icon"
 				class="h-6 w-6 hover:text-red-500"
 				onclick={clearLogs}
-				disabled={clearing || logs.length === 0}
+				disabled={clearing || logs.length === 0 || streaming}
 				title="Clear logs"
 			>
 				<Trash2 class="size-3" />

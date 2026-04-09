@@ -137,13 +137,15 @@ export async function deleteProvisionedCluster(id: number): Promise<void> {
 export async function updateProvisionedClusterStatus(
 	id: number,
 	status: ProvisionedClusterStatus,
-	statusMessage?: string
+	statusMessage?: string,
+	apiServerHostname?: string
 ): Promise<void> {
 	await db
 		.update(provisionedClusters)
 		.set({
 			status,
 			statusMessage: statusMessage ?? null,
+			...(apiServerHostname !== undefined ? { apiServerHostname } : {}),
 			updatedAt: new Date().toISOString()
 		})
 		.where(eq(provisionedClusters.id, id));

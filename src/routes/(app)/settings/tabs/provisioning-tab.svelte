@@ -21,7 +21,9 @@
 		Plus,
 		RefreshCw,
 		Server,
-		ScrollText
+		ScrollText,
+		HeartPulse,
+		Download
 	} from 'lucide-svelte';
 	import { provisionedClustersStore, type ProvisionedClusterPublic } from '$lib/stores/provisioned-clusters.svelte';
 	import ProvisioningWizard from '$lib/components/provisioning/provisioning-wizard.svelte';
@@ -129,6 +131,46 @@
 	// ── Cluster Actions ───────────────────────────────────────────────────────
 
 	let toggling = $state<number | null>(null);
+	let healthChecking = $state<number | null>(null);
+	let fetchingKubeconfig = $state<number | null>(null);
+
+	async function retryFetchKubeconfig(cluster: ProvisionedClusterPublic) {
+		fetchingKubeconfig = cluster.id;
+		try {
+			const res = await fetch(`/api/provisioning/${cluster.id}/fetch-kubeconfig`, { method: 'POST' });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error ?? 'Failed to start kubeconfig fetch');
+			toast.success(data.message ?? 'Kubeconfig fetch started');
+			// Refresh after a delay so hasKubeconfig updates
+			setTimeout(() => provisionedClustersStore.fetch(), 30_000);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to fetch kubeconfig');
+		} finally {
+			fetchingKubeconfig = null;
+		}
+	}
+	let healthResults = $state<Record<number, { healthy: boolean; message: string } | null>>({});
+
+	async function checkHealth(cluster: ProvisionedClusterPublic) {
+		healthChecking = cluster.id;
+		healthResults[cluster.id] = null;
+		try {
+			const res = await fetch(`/api/provisioning/${cluster.id}/health`);
+			const data = await res.json();
+			healthResults[cluster.id] = { healthy: data.healthy, message: data.message ?? '' };
+			if (data.healthy) {
+				toast.success(`${cluster.clusterName}: ${data.message}`);
+			} else {
+				toast.error(`${cluster.clusterName}: ${data.message}`);
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : 'Health check failed';
+			healthResults[cluster.id] = { healthy: false, message: msg };
+			toast.error(msg);
+		} finally {
+			healthChecking = null;
+		}
+	}
 
 	async function toggleProtection(cluster: ProvisionedClusterPublic) {
 		toggling = cluster.id;
@@ -328,6 +370,45 @@
 
 					<!-- Actions -->
 					<div class="flex shrink-0 items-center gap-1">
+						{#if cluster.hasKubeconfig}
+							<a
+								href="/api/provisioning/{cluster.id}/kubeconfig"
+								download
+								title="Download kubeconfig"
+								class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+							>
+								<Download class="size-3.5" />
+							</a>
+						{:else if cluster.status === 'running'}
+							<Button
+								variant="ghost"
+								size="icon"
+								class="size-7 text-amber-500 hover:text-amber-600"
+								title="Kubeconfig not fetched yet — click to retry"
+								onclick={() => retryFetchKubeconfig(cluster)}
+								disabled={fetchingKubeconfig === cluster.id}
+							>
+								{#if fetchingKubeconfig === cluster.id}
+									<Loader2 class="size-3.5 animate-spin" />
+								{:else}
+									<Download class="size-3.5" />
+								{/if}
+							</Button>
+						{/if}
+						<Button
+							variant="ghost"
+							size="icon"
+							class={cn('size-7', healthResults[cluster.id]?.healthy === true ? 'text-emerald-500 hover:text-emerald-600' : healthResults[cluster.id]?.healthy === false ? 'text-red-400 hover:text-red-500' : 'text-muted-foreground hover:text-foreground')}
+							title={healthResults[cluster.id] ? healthResults[cluster.id]!.message : 'Check cluster health'}
+							onclick={() => checkHealth(cluster)}
+							disabled={healthChecking === cluster.id}
+						>
+							{#if healthChecking === cluster.id}
+								<Loader2 class="size-3.5 animate-spin" />
+							{:else}
+								<HeartPulse class="size-3.5" />
+							{/if}
+						</Button>
 						<Button
 							variant="ghost"
 							size="icon"

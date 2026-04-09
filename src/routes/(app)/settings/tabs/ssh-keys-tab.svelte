@@ -17,7 +17,8 @@
 		Lock,
 		AlertTriangle,
 		UploadCloud,
-		CheckCircle2
+		CheckCircle2,
+		Download
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
@@ -27,6 +28,7 @@
 	let newKeyName = $state('');
 	let newKeyDesc = $state('');
 	let newKeyPrivate = $state('');
+	let newKeyPublic = $state('');
 	let newKeyGenerating = $state(false);
 	let newKeySaving = $state(false);
 	let newKeyError = $state('');
@@ -37,6 +39,7 @@
 		try {
 			const result = await sshKeysStore.generate(type);
 			newKeyPrivate = result.privateKey;
+			newKeyPublic = result.publicKey;
 		} catch (err) {
 			newKeyError = err instanceof Error ? err.message : 'Generation failed';
 		} finally {
@@ -52,12 +55,14 @@
 			await sshKeysStore.createPrivate({
 				name: newKeyName.trim(),
 				description: newKeyDesc.trim() || undefined,
-				privateKey: newKeyPrivate.trim()
+				privateKey: newKeyPrivate.trim(),
+				publicKey: newKeyPublic.trim() || undefined
 			});
 			newKeyOpen = false;
 			newKeyName = '';
 			newKeyDesc = '';
 			newKeyPrivate = '';
+			newKeyPublic = '';
 		} catch (err) {
 			newKeyError = err instanceof Error ? err.message : 'Failed to create key';
 		} finally {
@@ -70,6 +75,7 @@
 		newKeyName = '';
 		newKeyDesc = '';
 		newKeyPrivate = '';
+		newKeyPublic = '';
 		newKeyError = '';
 	}
 
@@ -247,6 +253,18 @@
 
 				<!-- Actions -->
 				<div class="flex shrink-0 items-center gap-1">
+					{#if key.hasPrivateKey}
+						<a href="/api/ssh-keys/{key.id}/download" download>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="size-7 text-muted-foreground hover:text-foreground"
+								title="Download private key"
+							>
+								<Download class="size-3.5" />
+							</Button>
+						</a>
+					{/if}
 					<Button
 						variant="ghost"
 						size="icon"

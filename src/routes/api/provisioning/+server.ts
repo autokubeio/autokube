@@ -4,14 +4,9 @@ import {
 	listProvisionedClusters,
 	insertProvisionedCluster
 } from '$lib/server/queries/provisioned-clusters';
+import { db, eq, clusters } from '$lib/server/db';
 import { logAuditEvent } from '$lib/server/queries/audit';
 import { authorize } from '$lib/server/services/authorize';
-
-/** Strip provider token before sending to client. */
-function safeCluster(c: Awaited<ReturnType<typeof insertProvisionedCluster>>) {
-	const { providerToken, ...rest } = c;
-	return { ...rest, hasProviderToken: !!providerToken };
-}
 
 export const GET: RequestHandler = async ({ cookies }) => {
 	const auth = await authorize(cookies);
@@ -20,7 +15,26 @@ export const GET: RequestHandler = async ({ cookies }) => {
 	}
 	try {
 		const rows = await listProvisionedClusters();
-		return json({ clusters: rows.map(safeCluster) });
+
+		// Determine which provisioned clusters have a kubeconfig linked
+		const linkedRows = await db
+			.select({ provisionedClusterId: clusters.provisionedClusterId, kubeconfig: clusters.kubeconfig })
+			.from(clusters)
+			.where(eq(clusters.isProvisioned, true));
+
+		const kubeconfigMap = new Map<number, boolean>();
+		for (const r of linkedRows) {
+			if (r.provisionedClusterId != null) {
+				kubeconfigMap.set(r.provisionedClusterId, !!r.kubeconfig);
+			}
+		}
+
+		return json({
+			clusters: rows.map((c) => {
+				const { providerToken, ...rest } = c;
+				return { ...rest, hasProviderToken: !!providerToken, hasKubeconfig: kubeconfigMap.get(c.id) ?? false };
+			})
+		});
 	} catch (err) {
 		console.error('[API/provisioning] Failed to list:', err);
 		return json({ error: 'Failed to list provisioned clusters' }, { status: 500 });
@@ -71,7 +85,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			userAgent: null
 		});
 
-		return json({ cluster: safeCluster(cluster) }, { status: 201 });
+		return json({ cluster: { ...cluster, providerToken: undefined, hasProviderToken: !!cluster.providerToken, hasKubeconfig: false } }, { status: 201 });
 	} catch (err) {
 		console.error('[API/provisioning] Failed to create:', err);
 		return json({ error: 'Failed to create provisioned cluster' }, { status: 500 });

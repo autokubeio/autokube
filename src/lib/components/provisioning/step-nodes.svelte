@@ -1,27 +1,30 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { WizardData } from './provisioning-wizard.svelte';
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import { Switch } from '$lib/components/ui/switch';
-	import { Plus, Trash2, Server, Crown, Tag, TrendingUp, X, MapPin } from 'lucide-svelte';
+	import { Plus, Trash2, Server, Crown, Tag, TrendingUp, X, MapPin, RefreshCw, AlertCircle } from 'lucide-svelte';
+	import InstanceTypeSelect from './instance-type-select.svelte';
 
 	const { data = $bindable() }: { data: WizardData } = $props();
 
-	const INSTANCE_TYPES = [
-		{ value: 'cx22',  label: 'CX22',  cores: 2,  mem: 4  },
-		{ value: 'cx32',  label: 'CX32',  cores: 4,  mem: 8  },
-		{ value: 'cx42',  label: 'CX42',  cores: 8,  mem: 16 },
-		{ value: 'cx52',  label: 'CX52',  cores: 16, mem: 32 },
-		{ value: 'cpx11', label: 'CPX11', cores: 2,  mem: 2  },
-		{ value: 'cpx21', label: 'CPX21', cores: 3,  mem: 4  },
-		{ value: 'cpx31', label: 'CPX31', cores: 4,  mem: 8  },
-		{ value: 'cpx41', label: 'CPX41', cores: 8,  mem: 16 },
-		{ value: 'cpx51', label: 'CPX51', cores: 16, mem: 32 }
+	// ── Static fallback types (used when API is unavailable) ──────────────────
+	const FALLBACK_INSTANCE_TYPES = [
+		{ value: 'cx22',  label: 'CX22',  cores: 2,  mem: 4,  disk: 40,  cpuType: 'shared', arch: 'x86' },
+		{ value: 'cx32',  label: 'CX32',  cores: 4,  mem: 8,  disk: 80,  cpuType: 'shared', arch: 'x86' },
+		{ value: 'cx42',  label: 'CX42',  cores: 8,  mem: 16, disk: 160, cpuType: 'shared', arch: 'x86' },
+		{ value: 'cx52',  label: 'CX52',  cores: 16, mem: 32, disk: 320, cpuType: 'shared', arch: 'x86' },
+		{ value: 'cpx11', label: 'CPX11', cores: 2,  mem: 2,  disk: 40,  cpuType: 'shared', arch: 'x86' },
+		{ value: 'cpx21', label: 'CPX21', cores: 3,  mem: 4,  disk: 80,  cpuType: 'shared', arch: 'x86' },
+		{ value: 'cpx31', label: 'CPX31', cores: 4,  mem: 8,  disk: 160, cpuType: 'shared', arch: 'x86' },
+		{ value: 'cpx41', label: 'CPX41', cores: 8,  mem: 16, disk: 240, cpuType: 'shared', arch: 'x86' },
+		{ value: 'cpx51', label: 'CPX51', cores: 16, mem: 32, disk: 360, cpuType: 'shared', arch: 'x86' }
 	];
 
-	const LOCATIONS = [
+	const FALLBACK_LOCATIONS = [
 		{ value: 'nbg1', label: 'Nuremberg',   region: 'DE', flag: '🇩🇪' },
 		{ value: 'fsn1', label: 'Falkenstein', region: 'DE', flag: '🇩🇪' },
 		{ value: 'hel1', label: 'Helsinki',    region: 'FI', flag: '🇫🇮' },
@@ -30,18 +33,55 @@
 		{ value: 'sin',  label: 'Singapore',   region: 'SG', flag: '🇸🇬' }
 	];
 
+	// ── Dynamic state ─────────────────────────────────────────────────────────
+	let instanceTypes = $state(FALLBACK_INSTANCE_TYPES);
+	let locations = $state(FALLBACK_LOCATIONS);
+	let loadingResources = $state(false);
+	let resourcesError = $state('');
+	let resourcesLoaded = $state(false);
+
+	async function loadProviderResources() {
+		if (!data.provider) return;
+		loadingResources = true;
+		resourcesError = '';
+		try {
+			const res = await fetch('/api/provisioning/provider-resources', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ provider: data.provider, token: data.providerToken || undefined })
+			});
+			if (res.ok) {
+				const d = await res.json();
+				if (d.serverTypes?.length) instanceTypes = d.serverTypes;
+				if (d.locations?.length) locations = d.locations;
+				resourcesLoaded = true;
+			} else {
+				const d = await res.json().catch(() => ({}));
+				resourcesError = d.error ?? 'Failed to load instance types';
+			}
+		} catch {
+			resourcesError = 'Network error loading instance types';
+		} finally {
+			loadingResources = false;
+		}
+	}
+
+	onMount(() => {
+		loadProviderResources();
+	});
+
 	const MASTER_COUNTS = [1, 3, 5, 7];
 	const NODE_COUNTS   = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20];
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
 
 	function getInstanceShort(value: string) {
-		const t = INSTANCE_TYPES.find((x) => x.value === value);
+		const t = instanceTypes.find((x) => x.value === value);
 		return t ? `${t.label}  ${t.cores}C / ${t.mem}G` : value;
 	}
 
 	function getLocationInfo(value: string) {
-		return LOCATIONS.find((x) => x.value === value);
+		return locations.find((x) => x.value === value);
 	}
 
 	function distributeLocations(locs: string[], count: number): string[] {
@@ -110,7 +150,7 @@
 	function getPoolSummary(pool: typeof data.workerPools[0]) {
 		const loc = getLocationInfo(pool.location);
 		const locStr = loc ? `${loc.flag} ${pool.location}` : pool.location;
-		const inst = INSTANCE_TYPES.find((t) => t.value === pool.instanceType);
+		const inst = instanceTypes.find((t) => t.value === pool.instanceType);
 		const instStr = inst ? inst.label : pool.instanceType;
 		if (pool.autoscaling.enabled) {
 			return `${pool.autoscaling.minInstances}–${pool.autoscaling.maxInstances}× ${instStr} · ${locStr}`;
@@ -128,14 +168,31 @@
 		<p class="text-xs text-muted-foreground">Define master nodes and worker node pools for your cluster.</p>
 	</div>
 
+	<!-- Instance types / locations loading state -->
+	{#if loadingResources}
+		<div class="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+			<RefreshCw class="size-3.5 text-muted-foreground animate-spin shrink-0" />
+			<span class="text-xs text-muted-foreground">Loading available instance types from {data.provider}…</span>
+		</div>
+	{:else if resourcesError}
+		<div class="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+			<AlertCircle class="size-3.5 text-amber-500 shrink-0" />
+			<span class="flex-1 text-xs text-amber-600 dark:text-amber-400">{resourcesError} — showing defaults.</span>
+			<button type="button" onclick={loadProviderResources} class="text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline shrink-0">Retry</button>
+		</div>
+	{/if}
+
 	<!-- Summary bar -->
-	<div class="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
-		<Server class="size-4 text-primary shrink-0" />
-		<span class="text-xs font-medium text-primary">
+	<div class="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
+		<Server class="size-4 text-muted-foreground shrink-0" />
+		<span class="text-xs text-muted-foreground">
 			{data.masterCount} master{data.masterCount > 1 ? 's' : ''}
-			+ {totalWorkers} worker{totalWorkers !== 1 ? 's' : ''}
-			= <strong>{totalNodes} total nodes</strong>
+			· {totalWorkers} worker{totalWorkers !== 1 ? 's' : ''}
+			· <strong class="text-foreground">{totalNodes} total nodes</strong>
 		</span>
+		{#if resourcesLoaded}
+			<span class="ml-auto text-[10px] text-muted-foreground/60 font-mono shrink-0">{instanceTypes.length} types · {locations.length} locations</span>
+		{/if}
 	</div>
 
 	<!-- ── Master Nodes ─────────────────────────────────────────────────── -->
@@ -167,19 +224,7 @@
 				</div>
 				<div class="space-y-1.5">
 					<Label class="text-xs font-medium text-muted-foreground">Instance Type</Label>
-					<Select.Root type="single" bind:value={data.masterInstanceType}>
-						<Select.Trigger class="h-9 text-sm">{getInstanceShort(data.masterInstanceType)}</Select.Trigger>
-						<Select.Content>
-							{#each INSTANCE_TYPES as t}
-								<Select.Item value={t.value}>
-									<div class="flex items-center justify-between gap-4 w-full">
-										<span class="font-mono font-medium">{t.label}</span>
-										<span class="text-xs text-muted-foreground">{t.cores} vCPU · {t.mem} GB</span>
-									</div>
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+					<InstanceTypeSelect bind:value={data.masterInstanceType} {instanceTypes} />
 				</div>
 			</div>
 
@@ -207,7 +252,7 @@
 							{#if l}{l.flag} {l.label}, {l.region}{:else}{data.masterLocations[0]}{/if}
 						</Select.Trigger>
 						<Select.Content>
-							{#each LOCATIONS as l}
+							{#each locations as l}
 								<Select.Item value={l.value}>
 									<span class="mr-2">{l.flag}</span>{l.label}
 									<span class="ml-1.5 font-mono text-xs text-muted-foreground">({l.value})</span>
@@ -218,7 +263,7 @@
 				{:else}
 					<!-- Multi-location chip picker -->
 					<div class="flex flex-wrap gap-2">
-						{#each LOCATIONS as l}
+					{#each locations as l}
 							{@const selected = masterSelectedLocs.includes(l.value)}
 							{@const count = locationDistribution[l.value] ?? 0}
 							<button
@@ -312,7 +357,7 @@
 
 					<div class="p-4 space-y-4">
 						<!-- Count / Instance / Location -->
-						<div class="grid grid-cols-3 gap-3">
+				<div class="grid grid-cols-[1fr_2fr_1fr] gap-3">
 							<div class="space-y-1.5">
 								<Label class="text-xs font-medium text-muted-foreground">
 									{pool.autoscaling.enabled ? 'Min Nodes' : 'Node Count'}
@@ -340,19 +385,7 @@
 
 							<div class="space-y-1.5">
 								<Label class="text-xs font-medium text-muted-foreground">Instance Type</Label>
-								<Select.Root type="single" value={pool.instanceType} onValueChange={(v: string) => { if (v) pool.instanceType = v; }}>
-									<Select.Trigger class="h-9 text-sm">{getInstanceShort(pool.instanceType)}</Select.Trigger>
-									<Select.Content>
-										{#each INSTANCE_TYPES as t}
-											<Select.Item value={t.value}>
-												<div class="flex items-center justify-between gap-4 w-full">
-													<span class="font-mono font-medium">{t.label}</span>
-													<span class="text-xs text-muted-foreground">{t.cores} vCPU · {t.mem} GB</span>
-												</div>
-											</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
+								<InstanceTypeSelect bind:value={pool.instanceType} {instanceTypes} />
 							</div>
 
 							<div class="space-y-1.5">
@@ -363,7 +396,7 @@
 										{#if l}{l.flag} {pool.location}{:else}{pool.location}{/if}
 									</Select.Trigger>
 									<Select.Content>
-										{#each LOCATIONS as l}
+										{#each locations as l}
 											<Select.Item value={l.value}>
 												<span class="mr-1.5">{l.flag}</span>{l.label}
 												<span class="ml-1.5 font-mono text-xs text-muted-foreground">({l.value})</span>

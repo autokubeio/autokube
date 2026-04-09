@@ -260,7 +260,8 @@
 			const mastersPoolConfig = {
 				count: data.masterCount,
 				instanceType: data.masterInstanceType,
-				locations: data.masterLocations
+				locations: data.masterLocations,
+				sshKeyId: data.sshKeyId
 			};
 
 			const workerPoolsConfig = data.workerPools.map((p) => ({
@@ -300,7 +301,15 @@
 				workerPoolsConfig
 			});
 
-			toast.success(`Cluster "${data.clusterName}" created successfully`);
+			// Trigger Terraform provisioning immediately
+			const startRes = await fetch(`/api/provisioning/${cluster.id}/start`, { method: 'POST' });
+			if (!startRes.ok) {
+				const err = await startRes.json().catch(() => ({ error: 'Unknown error' }));
+				toast.error(`Cluster created but provisioning failed to start: ${err.error}`);
+			} else {
+				toast.success(`Cluster "${data.clusterName}" is provisioning — watch the logs for progress.`);
+			}
+
 			open = false;
 			onSuccess?.(cluster.id);
 		} catch (err) {
