@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -24,7 +24,7 @@
 		Minus
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type StatefulSet,
@@ -46,6 +46,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -114,7 +121,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let statefulSetsWatch: ReturnType<typeof useResourceWatch<StatefulSet>> | null = null;
+	let statefulSetsWatch: ReturnType<typeof useBatchWatch<StatefulSet>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -126,31 +133,13 @@
 
 			if (statefulSetsWatch) statefulSetsWatch.unsubscribe();
 
-			statefulSetsWatch = useResourceWatch<StatefulSet>({
+			statefulSetsWatch = useBatchWatch<StatefulSet>({
 				clusterId: activeCluster.id,
 				resourceType: 'statefulsets',
 				namespace: ns,
-				onAdded: (sts) => {
-					allStatefulSets = arrayAdd(
-						allStatefulSets,
-						sts,
-						(s) => `${s.namespace}/${s.name}`
-					);
-				},
-				onModified: (sts) => {
-					allStatefulSets = arrayModify(
-						allStatefulSets,
-						sts,
-						(s) => `${s.namespace}/${s.name}`
-					);
-				},
-				onDeleted: (sts) => {
-					allStatefulSets = arrayDelete(
-						allStatefulSets,
-						sts,
-						(s) => `${s.namespace}/${s.name}`
-					);
-				}
+				getItems: () => allStatefulSets,
+				setItems: (v) => { allStatefulSets = v; },
+				keyFn: (i) => `${i.namespace}/${i.name}`
 			});
 
 			statefulSetsWatch.subscribe();
@@ -346,7 +335,8 @@
 				<Input
 					placeholder="Search statefulsets..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -398,6 +388,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, statefulset: StatefulSetWithAge, rowState)}
 					{#if column.id === 'name'}

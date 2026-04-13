@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type Service,
@@ -43,6 +43,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -102,7 +109,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let servicesWatch: ReturnType<typeof useResourceWatch<Service>> | null = null;
+	let servicesWatch: ReturnType<typeof useBatchWatch<Service>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -114,19 +121,27 @@
 
 			if (servicesWatch) servicesWatch.unsubscribe();
 
-			servicesWatch = useResourceWatch<Service>({
+			servicesWatch = useBatchWatch<Service>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'services',
+
+
 				namespace: ns,
-				onAdded: (svc) => {
-					allServices = arrayAdd(allServices, svc, (s) => `${s.namespace}/${s.name}`);
-				},
-				onModified: (svc) => {
-					allServices = arrayModify(allServices, svc, (s) => `${s.namespace}/${s.name}`);
-				},
-				onDeleted: (svc) => {
-					allServices = arrayDelete(allServices, svc, (s) => `${s.namespace}/${s.name}`);
-				}
+
+
+				getItems: () => allServices,
+
+
+				setItems: (v) => { allServices = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			servicesWatch.subscribe();
@@ -260,7 +275,8 @@
 				<Input
 					placeholder="Search services..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -312,6 +328,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, svc: ServiceWithAge, rowState)}
 					{#if column.id === 'name'}

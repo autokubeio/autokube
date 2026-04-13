@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -23,7 +23,7 @@
 		Play
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type Job,
@@ -45,6 +45,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -106,7 +113,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let jobsWatch: ReturnType<typeof useResourceWatch<Job>> | null = null;
+	let jobsWatch: ReturnType<typeof useBatchWatch<Job>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -118,19 +125,27 @@
 
 			if (jobsWatch) jobsWatch.unsubscribe();
 
-			jobsWatch = useResourceWatch<Job>({
+			jobsWatch = useBatchWatch<Job>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'jobs',
+
+
 				namespace: ns,
-				onAdded: (job) => {
-					allJobs = arrayAdd(allJobs, job, (j) => `${j.namespace}/${j.name}`);
-				},
-				onModified: (job) => {
-					allJobs = arrayModify(allJobs, job, (j) => `${j.namespace}/${j.name}`);
-				},
-				onDeleted: (job) => {
-					allJobs = arrayDelete(allJobs, job, (j) => `${j.namespace}/${j.name}`);
-				}
+
+
+				getItems: () => allJobs,
+
+
+				setItems: (v) => { allJobs = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			jobsWatch.subscribe();
@@ -293,7 +308,8 @@
 				<Input
 					placeholder="Search jobs..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -345,6 +361,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, job: JobWithAge, rowState)}
 					{#if column.id === 'name'}

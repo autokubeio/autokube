@@ -6,7 +6,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -19,7 +19,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type ClusterRole,
@@ -38,6 +38,13 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -82,7 +89,7 @@
 	});
 
 	// SSE watch
-	let crsWatch: ReturnType<typeof useResourceWatch<ClusterRole>> | null = null;
+	let crsWatch: ReturnType<typeof useBatchWatch<ClusterRole>> | null = null;
 
 	$effect(() => {
 		if (activeCluster) {
@@ -90,18 +97,24 @@
 
 			if (crsWatch) crsWatch.unsubscribe();
 
-			crsWatch = useResourceWatch<ClusterRole>({
+			crsWatch = useBatchWatch<ClusterRole>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'clusterroles',
-				onAdded: (cr) => {
-					allClusterRoles = arrayAdd(allClusterRoles, cr, (i) => i.name);
-				},
-				onModified: (cr) => {
-					allClusterRoles = arrayModify(allClusterRoles, cr, (i) => i.name);
-				},
-				onDeleted: (cr) => {
-					allClusterRoles = arrayDelete(allClusterRoles, cr, (i) => i.name);
-				}
+
+
+				getItems: () => allClusterRoles,
+
+
+				setItems: (v) => { allClusterRoles = v; },
+
+
+				keyFn: (i) => i.name
+
+
 			});
 
 			crsWatch.subscribe();
@@ -215,7 +228,8 @@
 				<Input
 					placeholder="Search cluster roles..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -253,6 +267,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, cr: ClusterRoleWithAge, rowState)}
 					{#if column.id === 'name'}

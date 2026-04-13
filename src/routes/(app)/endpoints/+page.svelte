@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type Endpoint,
@@ -43,6 +43,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -100,7 +107,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let endpointsWatch: ReturnType<typeof useResourceWatch<Endpoint>> | null = null;
+	let endpointsWatch: ReturnType<typeof useBatchWatch<Endpoint>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -112,19 +119,27 @@
 
 			if (endpointsWatch) endpointsWatch.unsubscribe();
 
-			endpointsWatch = useResourceWatch<Endpoint>({
+			endpointsWatch = useBatchWatch<Endpoint>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'endpoints',
+
+
 				namespace: ns,
-				onAdded: (ep) => {
-					allEndpoints = arrayAdd(allEndpoints, ep, (e) => `${e.namespace}/${e.name}`);
-				},
-				onModified: (ep) => {
-					allEndpoints = arrayModify(allEndpoints, ep, (e) => `${e.namespace}/${e.name}`);
-				},
-				onDeleted: (ep) => {
-					allEndpoints = arrayDelete(allEndpoints, ep, (e) => `${e.namespace}/${e.name}`);
-				}
+
+
+				getItems: () => allEndpoints,
+
+
+				setItems: (v) => { allEndpoints = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			endpointsWatch.subscribe();
@@ -258,7 +273,8 @@
 				<Input
 					placeholder="Search endpoints..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -310,6 +326,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, ep: EndpointWithAge, rowState)}
 					{#if column.id === 'name'}

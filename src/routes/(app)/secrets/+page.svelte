@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -23,7 +23,7 @@
 		EyeOff
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type Secret,
@@ -43,6 +43,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -97,7 +104,7 @@
 	});
 
 	// SSE watch
-	let secretsWatch: ReturnType<typeof useResourceWatch<Secret>> | null = null;
+	let secretsWatch: ReturnType<typeof useBatchWatch<Secret>> | null = null;
 
 	$effect(() => {
 		if (activeCluster) {
@@ -108,19 +115,27 @@
 
 			if (secretsWatch) secretsWatch.unsubscribe();
 
-			secretsWatch = useResourceWatch<Secret>({
+			secretsWatch = useBatchWatch<Secret>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'secrets',
+
+
 				namespace: ns,
-				onAdded: (s) => {
-					allSecrets = arrayAdd(allSecrets, s, (i) => `${i.namespace}/${i.name}`);
-				},
-				onModified: (s) => {
-					allSecrets = arrayModify(allSecrets, s, (i) => `${i.namespace}/${i.name}`);
-				},
-				onDeleted: (s) => {
-					allSecrets = arrayDelete(allSecrets, s, (i) => `${i.namespace}/${i.name}`);
-				}
+
+
+				getItems: () => allSecrets,
+
+
+				setItems: (v) => { allSecrets = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			secretsWatch.subscribe();
@@ -254,7 +269,8 @@
 				<Input
 					placeholder="Search secrets..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -306,6 +322,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, secret: SecretWithAge, rowState)}
 					{#if column.id === 'name'}

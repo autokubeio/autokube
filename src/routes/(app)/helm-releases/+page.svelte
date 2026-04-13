@@ -286,6 +286,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, release: HelmReleaseWithAge)}
 					{#if column.id === 'name'}

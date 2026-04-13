@@ -116,6 +116,13 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 	let sortBy = $state<'pods' | 'cpu' | 'memory' | 'name'>('pods');
 	let expandedNodes = $state<Set<string>>(new Set());
 	let selectedNamespace = $state('all');
@@ -545,7 +552,8 @@
 				<input
 					class="h-8 w-48 rounded-md border bg-transparent pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
 					placeholder="Search nodes or pods..."
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 

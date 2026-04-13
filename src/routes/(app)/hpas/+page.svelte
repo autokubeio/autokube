@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import { type HPA, type HPAWithAge, getHPAStatus, getStatusIcon, getStatusColor } from './columns';
 	import { DataTableView, type DataTableSortState } from '$lib/components/data-table-view';
@@ -36,6 +36,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -96,7 +103,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let hpaWatch: ReturnType<typeof useResourceWatch<HPA>> | null = null;
+	let hpaWatch: ReturnType<typeof useBatchWatch<HPA>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -108,19 +115,27 @@
 
 			if (hpaWatch) hpaWatch.unsubscribe();
 
-			hpaWatch = useResourceWatch<HPA>({
+			hpaWatch = useBatchWatch<HPA>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'hpas',
+
+
 				namespace: ns,
-				onAdded: (hpa) => {
-					allHPAs = arrayAdd(allHPAs, hpa, (h) => `${h.namespace}/${h.name}`);
-				},
-				onModified: (hpa) => {
-					allHPAs = arrayModify(allHPAs, hpa, (h) => `${h.namespace}/${h.name}`);
-				},
-				onDeleted: (hpa) => {
-					allHPAs = arrayDelete(allHPAs, hpa, (h) => `${h.namespace}/${h.name}`);
-				}
+
+
+				getItems: () => allHPAs,
+
+
+				setItems: (v) => { allHPAs = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			hpaWatch.subscribe();
@@ -256,7 +271,8 @@
 				<Input
 					placeholder="Search HPAs..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -308,6 +324,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, hpa: HPAWithAge, rowState)}
 					{#if column.id === 'name'}

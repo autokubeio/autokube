@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -24,7 +24,7 @@
 		Minus
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type Deployment,
@@ -46,6 +46,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -113,7 +120,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let deploymentsWatch: ReturnType<typeof useResourceWatch<Deployment>> | null = null;
+	let deploymentsWatch: ReturnType<typeof useBatchWatch<Deployment>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -125,27 +132,13 @@
 
 			if (deploymentsWatch) deploymentsWatch.unsubscribe();
 
-			deploymentsWatch = useResourceWatch<Deployment>({
+			deploymentsWatch = useBatchWatch<Deployment>({
 				clusterId: activeCluster.id,
 				resourceType: 'deployments',
 				namespace: ns,
-				onAdded: (d) => {
-					allDeployments = arrayAdd(allDeployments, d, (dep) => `${dep.namespace}/${dep.name}`);
-				},
-				onModified: (d) => {
-					allDeployments = arrayModify(
-						allDeployments,
-						d,
-						(dep) => `${dep.namespace}/${dep.name}`
-					);
-				},
-				onDeleted: (d) => {
-					allDeployments = arrayDelete(
-						allDeployments,
-						d,
-						(dep) => `${dep.namespace}/${dep.name}`
-					);
-				}
+				getItems: () => allDeployments,
+				setItems: (v) => { allDeployments = v; },
+				keyFn: (i) => `${i.namespace}/${i.name}`
 			});
 
 			deploymentsWatch.subscribe();
@@ -341,7 +334,8 @@
 				<Input
 					placeholder="Search deployments..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -393,6 +387,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, deployment: DeploymentWithAge, rowState)}
 					{#if column.id === 'name'}

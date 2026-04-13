@@ -6,7 +6,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -20,7 +20,7 @@
 		Star
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import type { IngressClass, IngressClassWithAge } from './columns';
 	import { DataTableView, type DataTableSortState } from '$lib/components/data-table-view';
@@ -33,6 +33,13 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -80,7 +87,7 @@
 		return result;
 	});
 
-	let ingressClassWatch: ReturnType<typeof useResourceWatch<IngressClass>> | null = null;
+	let ingressClassWatch: ReturnType<typeof useBatchWatch<IngressClass>> | null = null;
 
 	$effect(() => {
 		if (activeCluster) {
@@ -88,18 +95,24 @@
 
 			if (ingressClassWatch) ingressClassWatch.unsubscribe();
 
-			ingressClassWatch = useResourceWatch<IngressClass>({
+			ingressClassWatch = useBatchWatch<IngressClass>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'ingressclasses',
-				onAdded: (ic) => {
-					allIngressClasses = arrayAdd(allIngressClasses, ic, (i) => i.name);
-				},
-				onModified: (ic) => {
-					allIngressClasses = arrayModify(allIngressClasses, ic, (i) => i.name);
-				},
-				onDeleted: (ic) => {
-					allIngressClasses = arrayDelete(allIngressClasses, ic, (i) => i.name);
-				}
+
+
+				getItems: () => allIngressClasses,
+
+
+				setItems: (v) => { allIngressClasses = v; },
+
+
+				keyFn: (i) => i.name
+
+
 			});
 
 			ingressClassWatch.subscribe();
@@ -213,7 +226,8 @@
 				<Input
 					placeholder="Search ingress classes..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -261,6 +275,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, ic: IngressClassWithAge, rowState)}
 					{#if column.id === 'name'}

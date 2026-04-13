@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type LimitRange,
@@ -41,6 +41,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -93,7 +100,7 @@
 	});
 
 	// SSE watch
-	let lrWatch: ReturnType<typeof useResourceWatch<LimitRange>> | null = null;
+	let lrWatch: ReturnType<typeof useBatchWatch<LimitRange>> | null = null;
 
 	$effect(() => {
 		if (activeCluster) {
@@ -104,19 +111,27 @@
 
 			if (lrWatch) lrWatch.unsubscribe();
 
-			lrWatch = useResourceWatch<LimitRange>({
+			lrWatch = useBatchWatch<LimitRange>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'limitranges',
+
+
 				namespace: ns,
-				onAdded: (lr) => {
-					allLimitRanges = arrayAdd(allLimitRanges, lr, (i) => `${i.namespace}/${i.name}`);
-				},
-				onModified: (lr) => {
-					allLimitRanges = arrayModify(allLimitRanges, lr, (i) => `${i.namespace}/${i.name}`);
-				},
-				onDeleted: (lr) => {
-					allLimitRanges = arrayDelete(allLimitRanges, lr, (i) => `${i.namespace}/${i.name}`);
-				}
+
+
+				getItems: () => allLimitRanges,
+
+
+				setItems: (v) => { allLimitRanges = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			lrWatch.subscribe();
@@ -250,7 +265,8 @@
 				<Input
 					placeholder="Search limit ranges..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -288,6 +304,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, lr: LimitRangeWithAge, rowState)}
 					{#if column.id === 'name'}

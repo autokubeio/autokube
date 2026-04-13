@@ -651,6 +651,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, resource)}
 					{@const res = resource as CRDResource & { _age: string }}

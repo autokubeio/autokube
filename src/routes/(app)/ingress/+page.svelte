@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -23,7 +23,7 @@
 		Unlock
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type Ingress,
@@ -45,6 +45,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -99,7 +106,7 @@
 		return result;
 	});
 
-	let ingressWatch: ReturnType<typeof useResourceWatch<Ingress>> | null = null;
+	let ingressWatch: ReturnType<typeof useBatchWatch<Ingress>> | null = null;
 
 	$effect(() => {
 		if (activeCluster) {
@@ -110,19 +117,27 @@
 
 			if (ingressWatch) ingressWatch.unsubscribe();
 
-			ingressWatch = useResourceWatch<Ingress>({
+			ingressWatch = useBatchWatch<Ingress>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'ingresses',
+
+
 				namespace: ns,
-				onAdded: (ing) => {
-					allIngresses = arrayAdd(allIngresses, ing, (i) => `${i.namespace}/${i.name}`);
-				},
-				onModified: (ing) => {
-					allIngresses = arrayModify(allIngresses, ing, (i) => `${i.namespace}/${i.name}`);
-				},
-				onDeleted: (ing) => {
-					allIngresses = arrayDelete(allIngresses, ing, (i) => `${i.namespace}/${i.name}`);
-				}
+
+
+				getItems: () => allIngresses,
+
+
+				setItems: (v) => { allIngresses = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			ingressWatch.subscribe();
@@ -256,7 +271,8 @@
 				<Input
 					placeholder="Search ingresses..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -308,6 +324,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, ing: IngressWithAge, rowState)}
 					{#if column.id === 'name'}

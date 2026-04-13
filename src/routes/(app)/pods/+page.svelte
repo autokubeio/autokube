@@ -82,19 +82,31 @@
 	// Sort state
 	let sortState = $state<DataTableSortState | undefined>(undefined);
 
-	// Pods with age and metrics (reactive to ticker)
-	const podsWithAge = $derived.by((): PodWithAge[] => {
-		const currentTime = timeTicker.now;
+	// ── Step 1: merge metrics into pods ─────────────────────────────────────
+	// Only recalculates when allPods or metricsMap changes — NOT on ticker.
+	// With metrics batching below this is at most 4×/second regardless of
+	// how many metric events the SSE sends.
+	const podsWithMetrics = $derived.by(() => {
 		return allPods.map((pod) => {
 			const metricKey = `${pod.namespace}/${pod.name}`;
 			const metrics = metricsMap.get(metricKey);
 			return {
 				...pod,
 				cpu: metrics?.cpu || pod.cpu || '0m',
-				memory: metrics?.memory || pod.memory || '0Mi',
-				age: calculateAgeWithTicker(pod.createdAt, currentTime)
+				memory: metrics?.memory || pod.memory || '0Mi'
 			};
 		});
+	});
+
+	// ── Step 2: add age from ticker ──────────────────────────────────────────
+	// Recalculates every 10s (ticker) OR when pod list/metrics change.
+	// Keeping age separate means a ticker tick does not re-read metricsMap.
+	const podsWithAge = $derived.by((): PodWithAge[] => {
+		const currentTime = timeTicker.now;
+		return podsWithMetrics.map((pod) => ({
+			...pod,
+			age: calculateAgeWithTicker(pod.createdAt, currentTime)
+		}));
 	});
 
 	// Filtered pods
@@ -132,7 +144,7 @@
 		return result;
 	});
 
-	// ── SSE batch buffer ────────────────────────────────────────────────────
+	// ── SSE batch buffers ────────────────────────────────────────────────────
 	// The K8s watch protocol sends an initial burst of ADDED events for every
 	// existing pod when it first connects. Without batching, 1000 pods = 1000
 	// sequential state mutations, each triggering all derived computations →
@@ -141,6 +153,20 @@
 	// a single state write on the next macrotask.
 	let _pendingAdds: Pod[] = [];
 	let _addBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Pod MODIFIED events are also batched so a rolling deployment that updates
+	// 50 pods at once does 1 state write instead of 50.
+	let _pendingModifies: Map<string, Pod> = new Map();
+	let _modifyBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Metrics updates are the hottest path: the SSE poll fires every 3s and can
+	// send one MODIFIED event per pod (1000 pods = 1000 events per cycle).
+	// Without batching each event clones metricsMap (O(n)) and triggers a full
+	// recompute of podsWithMetrics — O(n²) per cycle.
+	// We buffer all metric changes and flush in one Map rebuild every 250ms.
+	let _metricsUpdateBuffer = new Map<string, { cpu: string; memory: string }>();
+	let _metricsDeleteBuffer = new Set<string>();
+	let _metricsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function flushPendingAdds() {
 		_addBatchTimer = null;
@@ -151,14 +177,66 @@
 		if (fresh.length > 0) allPods = [...allPods, ...fresh]; // one state update
 	}
 
+	function flushPendingModifies() {
+		_modifyBatchTimer = null;
+		if (_pendingModifies.size === 0) return;
+		const updates = _pendingModifies;
+		_pendingModifies = new Map();
+		let arr = allPods;
+		for (const [key, pod] of updates) {
+			const idx = arr.findIndex((p) => `${p.namespace}/${p.name}` === key);
+			if (idx === -1) {
+				arr = [...arr, pod];
+			} else {
+				arr = [...arr.slice(0, idx), pod, ...arr.slice(idx + 1)];
+			}
+		}
+		allPods = arr; // one state update for all modifies
+	}
+
+	function flushMetrics() {
+		_metricsFlushTimer = null;
+		if (_metricsUpdateBuffer.size === 0 && _metricsDeleteBuffer.size === 0) return;
+		const next = new Map(metricsMap);
+		for (const [k, v] of _metricsUpdateBuffer) next.set(k, v);
+		for (const k of _metricsDeleteBuffer) next.delete(k);
+		_metricsUpdateBuffer.clear();
+		_metricsDeleteBuffer.clear();
+		metricsMap = next; // ONE state update regardless of how many events arrived
+	}
+
 	function queueAdd(pod: Pod) {
 		_pendingAdds.push(pod);
 		if (!_addBatchTimer) _addBatchTimer = setTimeout(flushPendingAdds, 50);
 	}
 
+	function queueModify(pod: Pod) {
+		_pendingModifies.set(`${pod.namespace}/${pod.name}`, pod);
+		if (!_modifyBatchTimer) _modifyBatchTimer = setTimeout(flushPendingModifies, 50);
+	}
+
+	function queueMetricUpdate(metric: PodMetric) {
+		const key = `${metric.namespace}/${metric.name}`;
+		_metricsUpdateBuffer.set(key, { cpu: metric.cpu, memory: metric.memory });
+		_metricsDeleteBuffer.delete(key);
+		if (!_metricsFlushTimer) _metricsFlushTimer = setTimeout(flushMetrics, 250);
+	}
+
+	function queueMetricDelete(metric: PodMetric) {
+		const key = `${metric.namespace}/${metric.name}`;
+		_metricsDeleteBuffer.add(key);
+		_metricsUpdateBuffer.delete(key);
+		if (!_metricsFlushTimer) _metricsFlushTimer = setTimeout(flushMetrics, 250);
+	}
+
 	function cancelPendingAdds() {
 		if (_addBatchTimer) { clearTimeout(_addBatchTimer); _addBatchTimer = null; }
+		if (_modifyBatchTimer) { clearTimeout(_modifyBatchTimer); _modifyBatchTimer = null; }
+		if (_metricsFlushTimer) { clearTimeout(_metricsFlushTimer); _metricsFlushTimer = null; }
 		_pendingAdds = [];
+		_pendingModifies.clear();
+		_metricsUpdateBuffer.clear();
+		_metricsDeleteBuffer.clear();
 	}
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
@@ -182,9 +260,7 @@
 				resourceType: 'pods',
 				namespace: ns,
 				onAdded: queueAdd,
-				onModified: (pod) => {
-					allPods = arrayModify(allPods, pod, (p) => `${p.namespace}/${p.name}`);
-				},
+				onModified: queueModify,
 				onDeleted: (pod) => {
 					allPods = arrayDelete(allPods, pod, (p) => `${p.namespace}/${p.name}`);
 				}
@@ -193,18 +269,8 @@
 			metricsWatch = useMetricsWatch({
 				clusterId: activeCluster.id,
 				namespace: ns,
-				onUpdate: (metric: PodMetric) => {
-					const key = `${metric.namespace}/${metric.name}`;
-					const m = new Map(metricsMap);
-					m.set(key, { cpu: metric.cpu, memory: metric.memory });
-					metricsMap = m;
-				},
-				onDelete: (metric: PodMetric) => {
-					const key = `${metric.namespace}/${metric.name}`;
-					const m = new Map(metricsMap);
-					m.delete(key);
-					metricsMap = m;
-				}
+				onUpdate: queueMetricUpdate,
+				onDelete: queueMetricDelete
 			});
 
 			podsWatch.subscribe();
@@ -427,11 +493,11 @@
 				keyField="name"
 				name={TableName.pods}
 				columns={visibleColumns}
-				virtualScroll={true}
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, pod: PodWithAge, rowState)}
 					{#if column.id === 'name'}

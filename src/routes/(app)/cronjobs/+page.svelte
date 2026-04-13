@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -24,7 +24,7 @@
 		Zap
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type CronJob,
@@ -46,6 +46,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -106,7 +113,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let cronJobsWatch: ReturnType<typeof useResourceWatch<CronJob>> | null = null;
+	let cronJobsWatch: ReturnType<typeof useBatchWatch<CronJob>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -118,19 +125,27 @@
 
 			if (cronJobsWatch) cronJobsWatch.unsubscribe();
 
-			cronJobsWatch = useResourceWatch<CronJob>({
+			cronJobsWatch = useBatchWatch<CronJob>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'cronjobs',
+
+
 				namespace: ns,
-				onAdded: (cj) => {
-					allCronJobs = arrayAdd(allCronJobs, cj, (c) => `${c.namespace}/${c.name}`);
-				},
-				onModified: (cj) => {
-					allCronJobs = arrayModify(allCronJobs, cj, (c) => `${c.namespace}/${c.name}`);
-				},
-				onDeleted: (cj) => {
-					allCronJobs = arrayDelete(allCronJobs, cj, (c) => `${c.namespace}/${c.name}`);
-				}
+
+
+				getItems: () => allCronJobs,
+
+
+				setItems: (v) => { allCronJobs = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			cronJobsWatch.subscribe();
@@ -334,7 +349,8 @@
 				<Input
 					placeholder="Search cronjobs..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -386,6 +402,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, cronjob: CronJobWithAge, rowState)}
 					{#if column.id === 'name'}

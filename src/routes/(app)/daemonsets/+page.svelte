@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -22,7 +22,7 @@
 		RotateCw
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type DaemonSet,
@@ -44,6 +44,13 @@
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -106,7 +113,7 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let daemonSetsWatch: ReturnType<typeof useResourceWatch<DaemonSet>> | null = null;
+	let daemonSetsWatch: ReturnType<typeof useBatchWatch<DaemonSet>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
@@ -118,19 +125,27 @@
 
 			if (daemonSetsWatch) daemonSetsWatch.unsubscribe();
 
-			daemonSetsWatch = useResourceWatch<DaemonSet>({
+			daemonSetsWatch = useBatchWatch<DaemonSet>({
+
+
 				clusterId: activeCluster.id,
+
+
 				resourceType: 'daemonsets',
+
+
 				namespace: ns,
-				onAdded: (ds) => {
-					allDaemonSets = arrayAdd(allDaemonSets, ds, (d) => `${d.namespace}/${d.name}`);
-				},
-				onModified: (ds) => {
-					allDaemonSets = arrayModify(allDaemonSets, ds, (d) => `${d.namespace}/${d.name}`);
-				},
-				onDeleted: (ds) => {
-					allDaemonSets = arrayDelete(allDaemonSets, ds, (d) => `${d.namespace}/${d.name}`);
-				}
+
+
+				getItems: () => allDaemonSets,
+
+
+				setItems: (v) => { allDaemonSets = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			daemonSetsWatch.subscribe();
@@ -292,7 +307,8 @@
 				<Input
 					placeholder="Search daemonsets..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -344,6 +360,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, daemonset: DaemonSetWithAge, rowState)}
 					{#if column.id === 'name'}
