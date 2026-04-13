@@ -60,8 +60,9 @@ export async function GET({ params, url, request, cookies }: RequestEvent) {
 			// Store previous metrics to detect changes
 			let previousMetrics = new Map<string, { cpu: string; memory: string }>();
 
+			const clusterLabel = `"${cluster.name}" (#${clusterId})`;
 			console.log(
-				`[SSE Metrics] Starting metrics stream (cluster ${clusterId}, ns=${namespace ?? 'all'})`
+				`[SSE Metrics] Starting metrics stream (cluster ${clusterLabel}, ns=${namespace ?? 'all'})`
 			);
 
 			try {
@@ -148,7 +149,7 @@ export async function GET({ params, url, request, cookies }: RequestEvent) {
 							});
 							break; // Stop polling - client will reconnect with backoff
 						} else if (!errorMsg.includes('404')) {
-							console.error('[SSE Metrics] Poll error:', errorMsg);
+						console.error(`[SSE Metrics] Poll error (cluster ${clusterLabel}):`, errorMsg);
 						}
 					}
 
@@ -171,12 +172,14 @@ export async function GET({ params, url, request, cookies }: RequestEvent) {
 					errorMsg.includes('Aborted');
 
 				if (!isAbort) {
-					console.error('[SSE Metrics] Stream error:', err);
+					console.error(`[SSE Metrics] Stream error (cluster ${clusterLabel}):`, err);
 					send({ type: 'ERROR', error: errorMsg });
 				}
 			}
 
-			console.log('[SSE Metrics] Stream ended');
+			if (!abortController.signal.aborted) {
+				console.log(`[SSE Metrics] Stream ended (cluster ${clusterLabel})`);
+			}
 
 			try {
 				controller.close();

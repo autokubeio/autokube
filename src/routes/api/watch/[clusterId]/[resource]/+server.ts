@@ -93,11 +93,17 @@ export const GET: RequestHandler = async ({ params, url, request, cookies}) => {
 				if (c) clusterLabel = `"${c.name}" (#${clusterId})`;
 			} catch { /* ignore */ }
 
-			try {
-				console.log(
-					`[SSE] Starting watch for ${resource} (cluster ${clusterLabel}, ns=${namespace ?? 'all'})`
-				);
+			console.log(
+				`[SSE] Starting watch for ${resource} (cluster ${clusterLabel}, ns=${namespace ?? 'all'})`
+			);
 
+			let watchAttempt = 0;
+			while (!abortController.signal.aborted) {
+			if (watchAttempt > 0) {
+				console.log(`[SSE] Reconnecting watch for ${resource} (cluster ${clusterLabel}, attempt ${watchAttempt})`);
+			}
+			watchAttempt++;
+			try {
 				await watchResourceByCluster(
 					clusterId,
 					watchPath,
@@ -391,7 +397,10 @@ export const GET: RequestHandler = async ({ params, url, request, cookies}) => {
 					abortController.signal
 				);
 
-					console.log(`[SSE] Watch ended for ${resource} (cluster ${clusterLabel})`);
+				if (!abortController.signal.aborted) {
+					// Watch expired naturally (K8s closed the stream after timeoutSeconds)
+					await new Promise((r) => setTimeout(r, 500));
+				}
 			} catch (err: any) {
 				const code: string = err?.code ?? '';
 				const msg: string = err?.message ?? '';
@@ -407,7 +416,7 @@ export const GET: RequestHandler = async ({ params, url, request, cookies}) => {
 					code === 'CONFIG_ERROR' ||
 					msg.includes('not found') ||
 					msg.includes('Invalid kubeconfig') ||
-					msg.includes('kubeconfig') && msg.includes('required') ||
+					(msg.includes('kubeconfig') && msg.includes('required')) ||
 					msg.includes('could not be decrypted') ||
 					msg.includes('encryption key') ||
 					msg.includes('Kubeconfig missing') ||
@@ -415,24 +424,37 @@ export const GET: RequestHandler = async ({ params, url, request, cookies}) => {
 					msg.includes('not found in kubeconfig') ||
 					msg.includes('Unsupported auth type');
 
+				// Transient server-side errors (503, 502, 500…)
+				const isServerError = msg.toLowerCase().includes('http 5') || msg.toLowerCase().includes('server error');
+
 				if (isAbort) {
-					// Normal client disconnect — silent
+					// Normal client disconnect — exit loop silently
+					break;
 				} else if (isConfigError) {
-					// Permanent config error — tell client to stop retrying
-					console.warn(`[SSE] Permanent config error for ${resource} (cluster ${clusterLabel}):`, msg);
+					// Permanent config error — tell client to stop retrying, then exit
+					console.warn(`[SSE] Config error for ${resource} (cluster ${clusterLabel}): ${msg}`);
 					send({ type: 'ERROR', code: 'CONFIG_ERROR', error: msg });
+					break;
 				} else if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ENOTFOUND') {
-					// K8s API unreachable — tell the client so it can back off
+					// K8s API unreachable — tell the client, pause, then reconnect
+					console.warn(`[SSE] Cluster unreachable for ${resource} (cluster ${clusterLabel}): ${code}`);
 					send({
 						type: 'ERROR',
 						code: 'CLUSTER_UNREACHABLE',
 						error: 'Cannot connect to Kubernetes API server'
 					});
+					await new Promise((r) => setTimeout(r, 5000));
+				} else if (isServerError) {
+					// K8s API returned 5xx — transient, back off and retry silently
+					console.warn(`[SSE] K8s 5xx for ${resource} (cluster ${clusterLabel}): ${msg} — retrying in 10s`);
+					await new Promise((r) => setTimeout(r, 10_000));
 				} else {
-					console.error(`[SSE] Watch error for ${resource}:`, err);
+					console.error(`[SSE] Watch error for ${resource} (cluster ${clusterLabel}):`, err);
 					send({ type: 'ERROR', code: 'WATCH_ERROR', error: msg || 'Unknown watch error' });
+					await new Promise((r) => setTimeout(r, 3000));
 				}
 			}
+			} // end while
 
 			try {
 				controller.close();

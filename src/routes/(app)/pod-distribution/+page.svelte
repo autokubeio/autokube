@@ -919,7 +919,7 @@
 												</tr>
 											</thead>
 											<tbody>
-												{#each node.pods.filter((p) => selectedNamespace === 'all' || p.namespace === selectedNamespace) as pod (pod.name)}
+												{#each node.pods.filter((p) => selectedNamespace === 'all' || p.namespace === selectedNamespace) as pod (`${pod.namespace}/${pod.name}`)}
 													<tr class="border-b last:border-0 hover:bg-muted/30">
 														<td class="max-w-50 truncate px-3 py-1.5 font-mono text-[11px]">
 															{pod.name}
