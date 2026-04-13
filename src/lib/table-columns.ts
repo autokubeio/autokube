@@ -205,7 +205,7 @@ export const configMapsColumns: ColumnConfig[] = [
 	{ id: 'namespace', label: 'Namespace', width: 120, minWidth: 100, sortable: true },
 	{ id: 'dataCount', label: 'Data', width: 80, minWidth: 60, sortable: true },
 	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
-	{ id: 'actions', label: '', fixed: 'end', width: 80, resizable: false }
+	{ id: 'actions', label: '', fixed: 'end', width: 100, resizable: false }
 ];
 
 export const secretsColumns: ColumnConfig[] = [

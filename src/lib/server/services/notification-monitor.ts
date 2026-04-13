@@ -678,24 +678,28 @@ async function syncWatchStreams(
 	const allClusters = await listClusters();
 	const clusterNames = new Map(allClusters.map((c) => [c.id, c.name]));
 
-	// Stop streams for clusters that no longer have bindings
+	// Stop streams for clusters that no longer exist or no longer have bindings
 	for (const clusterId of [...watchStreams.keys()]) {
-		if (!bindingsByCluster.has(clusterId)) {
-			console.log(`[Monitor] Stopping watch for cluster ${clusterId} (no more bindings)`);
+		if (!bindingsByCluster.has(clusterId) || !clusterNames.has(clusterId)) {
+			console.log(`[Monitor] Stopping watch for cluster ${clusterId} (no more bindings or cluster removed)`);
 			stopWatchStream(clusterId);
 		}
 	}
 
 	// Start or update streams
 	for (const [clusterId, bindings] of bindingsByCluster) {
+		const name = clusterNames.get(clusterId);
+		if (!name) {
+			// Binding references a cluster that no longer exists — skip silently
+			continue;
+		}
 		const existing = watchStreams.get(clusterId);
 		if (existing) {
 			// Update bindings on the live stream (no reconnect needed)
 			existing.bindings = bindings;
-			existing.clusterName = clusterNames.get(clusterId) ?? `Cluster #${clusterId}`;
+			existing.clusterName = name;
 		} else {
 			// Start new watch stream
-			const name = clusterNames.get(clusterId) ?? `Cluster #${clusterId}`;
 			await startWatchStream(clusterId, name, bindings);
 		}
 	}
