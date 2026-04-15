@@ -41,6 +41,10 @@
 	import type { ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	// Track only the cluster ID so the $effect below does NOT re-run on every
+	// 30 s cluster-info poll (which replaces `active` with a new object reference
+	// even though the id is unchanged — previously that reset allPods every 30 s).
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	const metricsEnabled = $derived(
 		clustersStore.clusters.find((c) => c.id === activeCluster?.id)?.metricsEnabled !== false
 	);
@@ -105,6 +109,9 @@
 		const currentTime = timeTicker.now;
 		return podsWithMetrics.map((pod) => ({
 			...pod,
+			// Composite key — pods in different namespaces can share the same name.
+			// The data-table uses this as the {#each} key to avoid duplicates.
+			id: `${pod.namespace}/${pod.name}`,
 			age: calculateAgeWithTicker(pod.createdAt, currentTime)
 		}));
 	});
@@ -144,54 +151,73 @@
 		return result;
 	});
 
-	// ── SSE batch buffers ────────────────────────────────────────────────────
-	// The K8s watch protocol sends an initial burst of ADDED events for every
-	// existing pod when it first connects. Without batching, 1000 pods = 1000
-	// sequential state mutations, each triggering all derived computations →
-	// O(n²) work that completely freezes the main thread.
-	// We accumulate events in a plain (non-reactive) buffer and flush them in
-	// a single state write on the next macrotask.
-	let _pendingAdds: Pod[] = [];
-	let _addBatchTimer: ReturnType<typeof setTimeout> | null = null;
+	// ── Unified SSE batch buffer ─────────────────────────────────────────────
+	// All pod changes (ADDED / MODIFIED / DELETED) are accumulated here and
+	// flushed in one allPods write every POD_FLUSH_DELAY ms.
+	//
+	// Key insight: if the same pod appears in both "adds" and "deletes" within
+	// the same flush window (e.g. a crash-looping pod that is created then
+	// removed within 200 ms), the two events CANCEL OUT — allPods never
+	// changes and the virtual scroll never jumps.
+	//
+	// Previous design applied deletes immediately and adds after 50 ms, which
+	// caused rapid 565 ↔ 566 oscillation and virtual-scroll disruption.
+	const POD_FLUSH_DELAY = 200; // ms — enough to absorb rapid create/delete pairs
 
-	// Pod MODIFIED events are also batched so a rolling deployment that updates
-	// 50 pods at once does 1 state write instead of 50.
-	let _pendingModifies: Map<string, Pod> = new Map();
-	let _modifyBatchTimer: ReturnType<typeof setTimeout> | null = null;
+	let _pendingAdds: Map<string, Pod> = new Map();    // key → latest ADDED pod
+	let _pendingModifies: Map<string, Pod> = new Map(); // key → latest MODIFIED pod
+	let _pendingDeletes: Set<string> = new Set();       // keys to remove
+	let _podBatchTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Metrics updates are the hottest path: the SSE poll fires every 3s and can
-	// send one MODIFIED event per pod (1000 pods = 1000 events per cycle).
-	// Without batching each event clones metricsMap (O(n)) and triggers a full
-	// recompute of podsWithMetrics — O(n²) per cycle.
-	// We buffer all metric changes and flush in one Map rebuild every 250ms.
+	// Metrics updates are the hottest path: the SSE poll fires every 3 s and
+	// can send one MODIFIED event per pod. We flush in a separate, independent
+	// timer so that metrics updates never interfere with pod-list stability.
 	let _metricsUpdateBuffer = new Map<string, { cpu: string; memory: string }>();
 	let _metricsDeleteBuffer = new Set<string>();
 	let _metricsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
-	function flushPendingAdds() {
-		_addBatchTimer = null;
-		if (_pendingAdds.length === 0) return;
-		const batch = _pendingAdds.splice(0); // drain buffer
-		const existingKeys = new Set(allPods.map((p) => `${p.namespace}/${p.name}`));
-		const fresh = batch.filter((p) => !existingKeys.has(`${p.namespace}/${p.name}`));
-		if (fresh.length > 0) allPods = [...allPods, ...fresh]; // one state update
-	}
+	function flushPodChanges() {
+		_podBatchTimer = null;
 
-	function flushPendingModifies() {
-		_modifyBatchTimer = null;
-		if (_pendingModifies.size === 0) return;
-		const updates = _pendingModifies;
+		const adds    = _pendingAdds;
+		const modifies = _pendingModifies;
+		const deletes  = _pendingDeletes;
+		_pendingAdds    = new Map();
 		_pendingModifies = new Map();
-		let arr = allPods;
-		for (const [key, pod] of updates) {
+		_pendingDeletes  = new Set();
+
+		if (adds.size === 0 && modifies.size === 0 && deletes.size === 0) return;
+
+		// ── 1. Apply deletes ────────────────────────────────────────────────
+		let arr = deletes.size > 0
+			? allPods.filter((p) => !deletes.has(`${p.namespace}/${p.name}`))
+			: allPods;
+
+		// ── 2. Apply modifies (skip pods that were also deleted) ────────────
+		for (const [key, pod] of modifies) {
+			if (deletes.has(key)) continue; // deleted in same window — skip
 			const idx = arr.findIndex((p) => `${p.namespace}/${p.name}` === key);
-			if (idx === -1) {
-				arr = [...arr, pod];
-			} else {
+			if (idx >= 0) {
 				arr = [...arr.slice(0, idx), pod, ...arr.slice(idx + 1)];
+			} else if (!adds.has(key)) {
+				// MODIFIED arrived before ADDED — upsert only if not coming via adds
+				arr = [...arr, pod];
 			}
 		}
-		allPods = arr; // one state update for all modifies
+
+		// ── 3. Apply adds (skip pods deleted in the same window) ───────────
+		const existingKeys = new Set(arr.map((p) => `${p.namespace}/${p.name}`));
+		const fresh: Pod[] = [];
+		for (const [key, pod] of adds) {
+			if (deletes.has(key)) continue; // add+delete cancelled out
+			if (!existingKeys.has(key)) {
+				existingKeys.add(key);
+				fresh.push(pod);
+			}
+		}
+		if (fresh.length > 0) arr = [...arr, ...fresh];
+
+		allPods = arr; // ONE state write for all pending changes
 	}
 
 	function flushMetrics() {
@@ -205,14 +231,29 @@
 		metricsMap = next; // ONE state update regardless of how many events arrived
 	}
 
+	function schedulePodFlush() {
+		if (!_podBatchTimer) _podBatchTimer = setTimeout(flushPodChanges, POD_FLUSH_DELAY);
+	}
+
 	function queueAdd(pod: Pod) {
-		_pendingAdds.push(pod);
-		if (!_addBatchTimer) _addBatchTimer = setTimeout(flushPendingAdds, 50);
+		const key = `${pod.namespace}/${pod.name}`;
+		_pendingAdds.set(key, pod);
+		_pendingDeletes.delete(key); // add wins over a stale delete in same window
+		schedulePodFlush();
 	}
 
 	function queueModify(pod: Pod) {
-		_pendingModifies.set(`${pod.namespace}/${pod.name}`, pod);
-		if (!_modifyBatchTimer) _modifyBatchTimer = setTimeout(flushPendingModifies, 50);
+		const key = `${pod.namespace}/${pod.name}`;
+		_pendingModifies.set(key, pod);
+		schedulePodFlush();
+	}
+
+	function queueDelete(pod: Pod) {
+		const key = `${pod.namespace}/${pod.name}`;
+		_pendingDeletes.add(key);
+		_pendingAdds.delete(key);    // add+delete in same window → cancel out
+		_pendingModifies.delete(key);
+		schedulePodFlush();
 	}
 
 	function queueMetricUpdate(metric: PodMetric) {
@@ -230,11 +271,11 @@
 	}
 
 	function cancelPendingAdds() {
-		if (_addBatchTimer) { clearTimeout(_addBatchTimer); _addBatchTimer = null; }
-		if (_modifyBatchTimer) { clearTimeout(_modifyBatchTimer); _modifyBatchTimer = null; }
+		if (_podBatchTimer) { clearTimeout(_podBatchTimer); _podBatchTimer = null; }
 		if (_metricsFlushTimer) { clearTimeout(_metricsFlushTimer); _metricsFlushTimer = null; }
-		_pendingAdds = [];
+		_pendingAdds.clear();
 		_pendingModifies.clear();
+		_pendingDeletes.clear();
 		_metricsUpdateBuffer.clear();
 		_metricsDeleteBuffer.clear();
 	}
@@ -245,29 +286,31 @@
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchPods();
+		// Read only the stable primitives — NOT the full activeCluster object.
+		// Reading activeCluster here would make the effect re-run every 30 s when
+		// the polling replaces `active` with a new object reference.
+		const clusterId = activeClusterId;
+		const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
-			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchPods(clusterId, selectedNamespace);
 
 			if (podsWatch) podsWatch.unsubscribe();
 			if (metricsWatch) metricsWatch.unsubscribe();
 			cancelPendingAdds();
 
 			podsWatch = useResourceWatch<Pod>({
-				clusterId: activeCluster.id,
+				clusterId,
 				resourceType: 'pods',
 				namespace: ns,
 				onAdded: queueAdd,
 				onModified: queueModify,
-				onDeleted: (pod) => {
-					allPods = arrayDelete(allPods, pod, (p) => `${p.namespace}/${p.name}`);
-				}
+				onDeleted: queueDelete
 			});
 
 			metricsWatch = useMetricsWatch({
-				clusterId: activeCluster.id,
+				clusterId,
 				namespace: ns,
 				onUpdate: queueMetricUpdate,
 				onDelete: queueMetricDelete
@@ -298,10 +341,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -311,17 +353,16 @@
 		}
 	}
 
-	async function fetchPods() {
-		if (!activeCluster?.id) return;
+	async function fetchPods(clusterId: number, nsParam: string) {
 
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
+			const ns = nsParam === 'all' ? 'all' : nsParam;
 			const [podsRes, metricsRes] = await Promise.all([
-				fetch(`/api/clusters/${activeCluster.id}/pods?namespace=${ns}`),
-				fetch(`/api/clusters/${activeCluster.id}/pods/metrics?namespace=${ns}`)
+				fetch(`/api/clusters/${clusterId}/pods?namespace=${ns}`),
+				fetch(`/api/clusters/${clusterId}/pods/metrics?namespace=${ns}`)
 			]);
 
 			const podsData = await podsRes.json();
@@ -390,7 +431,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchPods();
+		if (activeClusterId) fetchPods(activeClusterId, selectedNamespace);
 	}
 
 	function openLogViewer(pod: PodWithAge) {
@@ -426,7 +467,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchPods}
+				onclick={() => { if (activeClusterId) fetchPods(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -436,7 +477,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchPods(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchPods(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -490,7 +531,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredPods}
-				keyField="name"
+				keyField="id"
 				name={TableName.pods}
 				columns={visibleColumns}
 				{sortState}
@@ -511,7 +552,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = pod.namespace;
-								fetchPods();
+								if (activeClusterId) fetchPods(activeClusterId, pod.namespace);
 							}}
 						/>
 					{:else if column.id === 'status'}
