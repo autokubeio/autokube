@@ -28,6 +28,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allNamespaces = $state<Namespace[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -90,15 +91,16 @@
 	let namespacesWatch: ReturnType<typeof useBatchWatch<Namespace>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
 
 			if (namespacesWatch) namespacesWatch.unsubscribe();
 
 			namespacesWatch = useBatchWatch<Namespace>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'namespaces',
@@ -130,14 +132,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
-
+	async function fetchNamespaces(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 
 			if (data.success && data.namespaces) {
@@ -192,7 +192,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchNamespaces();
+		if (activeClusterId) fetchNamespaces(activeClusterId);
 	}
 </script>
 
@@ -213,7 +213,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchNamespaces}
+				onclick={() => { if (activeClusterId) fetchNamespaces(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

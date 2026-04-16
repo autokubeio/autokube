@@ -37,6 +37,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allQuotas = $state<ResourceQuota[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -105,9 +106,10 @@
 	let quotasWatch: ReturnType<typeof useBatchWatch<ResourceQuota>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchQuotas();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchQuotas(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -116,7 +118,7 @@
 			quotasWatch = useBatchWatch<ResourceQuota>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'resourcequotas',
@@ -152,10 +154,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -165,15 +166,13 @@
 		}
 	}
 
-	async function fetchQuotas() {
-		if (!activeCluster?.id) return;
-
+	async function fetchQuotas(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/resourcequotas?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/resourcequotas?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.resourceQuotas) {
@@ -227,7 +226,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchQuotas();
+		if (activeClusterId) fetchQuotas(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -248,7 +247,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchQuotas}
+				onclick={() => { if (activeClusterId) fetchQuotas(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -258,7 +257,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchQuotas(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchQuotas(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -320,7 +319,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = quota.namespace;
-								fetchQuotas();
+								if (activeClusterId) fetchQuotas(activeClusterId, quota.namespace);
 							}}
 						/>
 					{:else if column.id === 'age'}

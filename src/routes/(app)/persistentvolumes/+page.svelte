@@ -34,6 +34,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allPVs = $state<PV[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -99,15 +100,16 @@
 	let pvsWatch: ReturnType<typeof useBatchWatch<PV>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchPVs();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchPVs(clusterId);
 
 			if (pvsWatch) pvsWatch.unsubscribe();
 
 			pvsWatch = useBatchWatch<PV>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'persistentvolumes',
@@ -139,14 +141,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchPVs() {
-		if (!activeCluster?.id) return;
-
+	async function fetchPVs(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/clusters/${activeCluster.id}/persistentvolumes`);
+			const res = await fetch(`/api/clusters/${clusterId}/persistentvolumes`);
 			const data = await res.json();
 
 			if (data.success && data.persistentVolumes) {
@@ -200,7 +200,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchPVs();
+		if (activeClusterId) fetchPVs(activeClusterId);
 	}
 </script>
 
@@ -221,7 +221,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchPVs}
+				onclick={() => { if (activeClusterId) fetchPVs(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

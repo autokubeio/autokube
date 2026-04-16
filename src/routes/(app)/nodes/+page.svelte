@@ -41,6 +41,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	const metricsEnabled = $derived(
 		clustersStore.clusters.find((c) => c.id === activeCluster?.id)?.metricsEnabled !== false
 	);
@@ -129,13 +130,14 @@
 
 	// Watch for cluster changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNodes();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNodes(clusterId);
 
 			if (nodesWatch) nodesWatch.unsubscribe();
 
 			nodesWatch = useBatchWatch<Node>({
-				clusterId: activeCluster.id,
+				clusterId,
 				resourceType: 'nodes',
 				getItems: () => allNodes,
 				setItems: (v) => { allNodes = v; },
@@ -162,16 +164,14 @@
 		if (_searchTimer !== null) clearTimeout(_searchTimer);
 	});
 
-	async function fetchNodes() {
-		if (!activeCluster?.id) return;
-
+	async function fetchNodes(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
 			const [nodesRes, metricsRes] = await Promise.all([
-				fetch(`/api/clusters/${activeCluster.id}/nodes`),
-				fetch(`/api/clusters/${activeCluster.id}/nodes/metrics`)
+				fetch(`/api/clusters/${clusterId}/nodes`),
+				fetch(`/api/clusters/${clusterId}/nodes/metrics`)
 			]);
 
 			const nodesData = await nodesRes.json();
@@ -214,7 +214,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchNodes();
+		if (activeClusterId) fetchNodes(activeClusterId);
 	}
 
 	async function handleCordon(node: NodeWithAge, unschedulable: boolean) {
@@ -229,7 +229,7 @@
 			const data = await res.json();
 			if (!data.success) throw new Error(data.error ?? 'Failed');
 			toast.success(`Node ${node.name} ${unschedulable ? 'cordoned' : 'uncordoned'} successfully`);
-			fetchNodes();
+			if (activeClusterId) fetchNodes(activeClusterId);
 		} catch (err) {
 			console.error('[Nodes] Cordon failed:', err);
 			toast.error(`Failed to ${unschedulable ? 'cordon' : 'uncordon'} node: ${err instanceof Error ? err.message : err}`);
@@ -256,7 +256,7 @@
 			const data = await res.json();
 			if (!data.success) throw new Error(data.error ?? 'Failed');
 			toast.success(`Node ${drainTarget.name} drained (${data.evicted} evicted, ${data.skipped} skipped)`);
-			fetchNodes();
+			if (activeClusterId) fetchNodes(activeClusterId);
 		} catch (err) {
 			console.error('[Nodes] Drain failed:', err);
 			toast.error(`Failed to drain node: ${err instanceof Error ? err.message : err}`);
@@ -284,7 +284,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchNodes}
+				onclick={() => { if (activeClusterId) fetchNodes(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

@@ -37,6 +37,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allSecrets = $state<Secret[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -107,9 +108,10 @@
 	let secretsWatch: ReturnType<typeof useBatchWatch<Secret>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchSecrets();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchSecrets(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -118,7 +120,7 @@
 			secretsWatch = useBatchWatch<Secret>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'secrets',
@@ -154,10 +156,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -167,15 +168,13 @@
 		}
 	}
 
-	async function fetchSecrets() {
-		if (!activeCluster?.id) return;
-
+	async function fetchSecrets(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/secrets?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/secrets?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.secrets) {
@@ -229,7 +228,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchSecrets();
+		if (activeClusterId) fetchSecrets(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -250,7 +249,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchSecrets}
+				onclick={() => { if (activeClusterId) fetchSecrets(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -260,7 +259,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchSecrets(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchSecrets(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -336,7 +335,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = secret.namespace;
-								fetchSecrets();
+								if (activeClusterId) fetchSecrets(activeClusterId, secret.namespace);
 							}}
 						/>
 					{:else if column.id === 'type'}

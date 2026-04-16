@@ -37,6 +37,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allEndpointSlices = $state<EndpointSlice[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -106,9 +107,10 @@
 	let endpointSlicesWatch: ReturnType<typeof useBatchWatch<EndpointSlice>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchEndpointSlices();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchEndpointSlices(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -117,7 +119,7 @@
 			endpointSlicesWatch = useBatchWatch<EndpointSlice>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'endpointslices',
@@ -153,10 +155,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -166,15 +167,13 @@
 		}
 	}
 
-	async function fetchEndpointSlices() {
-		if (!activeCluster?.id) return;
-
+	async function fetchEndpointSlices(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/endpointslices?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/endpointslices?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.endpointSlices) {
@@ -228,7 +227,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchEndpointSlices();
+		if (activeClusterId) fetchEndpointSlices(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -249,7 +248,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchEndpointSlices}
+				onclick={() => { if (activeClusterId) fetchEndpointSlices(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -259,7 +258,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchEndpointSlices(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchEndpointSlices(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -314,7 +313,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredEndpointSlices}
-				keyField="name"
+				keyField="id"
 				name={TableName.endpointslices}
 				columns={endpointSlicesColumns}
 				{sortState}
@@ -335,7 +334,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = es.namespace;
-								fetchEndpointSlices();
+								if (activeClusterId) fetchEndpointSlices(activeClusterId, es.namespace);
 							}}
 						/>
 					{:else if column.id === 'addressType'}

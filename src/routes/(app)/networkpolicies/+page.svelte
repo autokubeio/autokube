@@ -37,6 +37,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allPolicies = $state<NetworkPolicy[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -71,6 +72,7 @@
 		const currentTime = timeTicker.now;
 		return allPolicies.map((p) => ({
 			...p,
+			id: `${p.namespace}/${p.name}`,
 			age: calculateAgeWithTicker(p.createdAt, currentTime)
 		}));
 	});
@@ -107,9 +109,10 @@
 	let policiesWatch: ReturnType<typeof useBatchWatch<NetworkPolicy>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchPolicies();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchPolicies(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -118,7 +121,7 @@
 			policiesWatch = useBatchWatch<NetworkPolicy>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'networkpolicies',
@@ -154,10 +157,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -167,15 +169,13 @@
 		}
 	}
 
-	async function fetchPolicies() {
-		if (!activeCluster?.id) return;
-
+	async function fetchPolicies(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/networkpolicies?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/networkpolicies?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.networkPolicies) {
@@ -229,7 +229,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchPolicies();
+		if (activeClusterId) fetchPolicies(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -250,7 +250,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchPolicies}
+				onclick={() => { if (activeClusterId) fetchPolicies(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -260,7 +260,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchPolicies(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchPolicies(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -315,7 +315,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredPolicies}
-				keyField="name"
+				keyField="id"
 				name={TableName.networkpolicies}
 				columns={networkPoliciesColumns}
 				{sortState}
@@ -336,7 +336,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = policy.namespace;
-								fetchPolicies();
+								if (activeClusterId) fetchPolicies(activeClusterId, policy.namespace);
 							}}
 						/>
 					{:else if column.id === 'policyTypes'}

@@ -40,6 +40,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allCronJobs = $state<CronJob[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -76,6 +77,7 @@
 		const currentTime = timeTicker.now;
 		return allCronJobs.map((cj) => ({
 			...cj,
+			id: `${cj.namespace}/${cj.name}`,
 			age: calculateAgeWithTicker(cj.createdAt, currentTime)
 		}));
 	});
@@ -117,9 +119,10 @@
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchCronJobs();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchCronJobs(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -128,7 +131,7 @@
 			cronJobsWatch = useBatchWatch<CronJob>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'cronjobs',
@@ -164,10 +167,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -177,15 +179,13 @@
 		}
 	}
 
-	async function fetchCronJobs() {
-		if (!activeCluster?.id) return;
-
+	async function fetchCronJobs(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/cronjobs?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/cronjobs?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.cronJobs) {
@@ -296,7 +296,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchCronJobs();
+		if (activeClusterId) fetchCronJobs(activeClusterId, selectedNamespace);
 	}
 
 	function formatLastSchedule(ts?: string): string {
@@ -330,7 +330,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchCronJobs}
+				onclick={() => { if (activeClusterId) fetchCronJobs(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -340,7 +340,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchCronJobs(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchCronJobs(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -395,7 +395,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredCronJobs}
-				keyField="name"
+				keyField="id"
 				name={TableName.cronjobs}
 				columns={cronJobsColumns}
 				{sortState}
@@ -416,7 +416,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = cronjob.namespace;
-								fetchCronJobs();
+								if (activeClusterId) fetchCronJobs(activeClusterId, cronjob.namespace);
 							}}
 						/>
 					{:else if column.id === 'schedule'}

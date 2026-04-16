@@ -37,6 +37,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allStorageClasses = $state<StorageClass[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -101,15 +102,16 @@
 	let scsWatch: ReturnType<typeof useBatchWatch<StorageClass>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchStorageClasses();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchStorageClasses(clusterId);
 
 			if (scsWatch) scsWatch.unsubscribe();
 
 			scsWatch = useBatchWatch<StorageClass>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'storageclasses',
@@ -141,14 +143,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchStorageClasses() {
-		if (!activeCluster?.id) return;
-
+	async function fetchStorageClasses(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/clusters/${activeCluster.id}/storageclasses`);
+			const res = await fetch(`/api/clusters/${clusterId}/storageclasses`);
 			const data = await res.json();
 
 			if (data.success && data.storageClasses) {
@@ -202,7 +202,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchStorageClasses();
+		if (activeClusterId) fetchStorageClasses(activeClusterId);
 	}
 </script>
 
@@ -223,7 +223,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchStorageClasses}
+				onclick={() => { if (activeClusterId) fetchStorageClasses(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

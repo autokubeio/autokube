@@ -36,6 +36,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allRoles = $state<Role[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -104,9 +105,10 @@
 	let rolesWatch: ReturnType<typeof useBatchWatch<Role>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchRoles();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchRoles(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -115,7 +117,7 @@
 			rolesWatch = useBatchWatch<Role>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'roles',
@@ -151,10 +153,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -164,15 +165,13 @@
 		}
 	}
 
-	async function fetchRoles() {
-		if (!activeCluster?.id) return;
-
+	async function fetchRoles(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/roles?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/roles?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.roles) {
@@ -226,7 +225,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchRoles();
+		if (activeClusterId) fetchRoles(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -247,7 +246,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchRoles}
+				onclick={() => { if (activeClusterId) fetchRoles(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -257,7 +256,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchRoles(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchRoles(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -319,7 +318,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = role.namespace;
-								fetchRoles();
+								if (activeClusterId) fetchRoles(activeClusterId, role.namespace);
 							}}
 						/>
 					{:else if column.id === 'rules'}

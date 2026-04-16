@@ -21,7 +21,7 @@ export type Service = {
 	createdAt: string;
 };
 
-export type ServiceWithAge = Service & { age: string };
+export type ServiceWithAge = Service & { age: string; id: string };
 
 /**
  * Service type color mapping

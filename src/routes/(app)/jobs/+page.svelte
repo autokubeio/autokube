@@ -39,6 +39,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allJobs = $state<Job[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -74,6 +75,7 @@
 		const currentTime = timeTicker.now;
 		return allJobs.map((job) => ({
 			...job,
+			id: `${job.namespace}/${job.name}`,
 			age: calculateAgeWithTicker(job.createdAt, currentTime)
 		}));
 	});
@@ -117,9 +119,10 @@
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchJobs();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchJobs(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -128,7 +131,7 @@
 			jobsWatch = useBatchWatch<Job>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'jobs',
@@ -164,10 +167,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -177,15 +179,13 @@
 		}
 	}
 
-	async function fetchJobs() {
-		if (!activeCluster?.id) return;
-
+	async function fetchJobs(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/jobs?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/jobs?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.jobs) {
@@ -268,7 +268,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchJobs();
+		if (activeClusterId) fetchJobs(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -289,7 +289,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchJobs}
+				onclick={() => { if (activeClusterId) fetchJobs(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -299,7 +299,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchJobs(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchJobs(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -354,7 +354,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredJobs}
-				keyField="name"
+				keyField="id"
 				name={TableName.jobs}
 				columns={jobsColumns}
 				{sortState}
@@ -375,7 +375,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = job.namespace;
-								fetchJobs();
+								if (activeClusterId) fetchJobs(activeClusterId, job.namespace);
 							}}
 						/>
 					{:else if column.id === 'status'}

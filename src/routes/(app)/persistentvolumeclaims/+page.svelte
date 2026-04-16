@@ -35,6 +35,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allPVCs = $state<PVC[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -106,9 +107,10 @@
 	let pvcsWatch: ReturnType<typeof useBatchWatch<PVC>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchPVCs();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchPVCs(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -117,7 +119,7 @@
 			pvcsWatch = useBatchWatch<PVC>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'persistentvolumeclaims',
@@ -153,10 +155,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -166,16 +167,14 @@
 		}
 	}
 
-	async function fetchPVCs() {
-		if (!activeCluster?.id) return;
-
+	async function fetchPVCs(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
+			const ns = nsParam === 'all' ? 'all' : nsParam;
 			const res = await fetch(
-				`/api/clusters/${activeCluster.id}/persistentvolumeclaims?namespace=${ns}`
+				`/api/clusters/${clusterId}/persistentvolumeclaims?namespace=${ns}`
 			);
 			const data = await res.json();
 
@@ -230,7 +229,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchPVCs();
+		if (activeClusterId) fetchPVCs(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -251,7 +250,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchPVCs}
+				onclick={() => { if (activeClusterId) fetchPVCs(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -261,7 +260,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchPVCs(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchPVCs(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -323,7 +322,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = pvc.namespace;
-								fetchPVCs();
+								if (activeClusterId) fetchPVCs(activeClusterId, pvc.namespace);
 							}}
 						/>
 					{:else if column.id === 'status'}

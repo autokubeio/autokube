@@ -30,6 +30,7 @@
 	// ─── State ────────────────────────────────────────────────────────────────
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allEvents = $state<K8sEvent[]>([]);
 	let loading = $state(false);
 	let namespaces = $state<string[]>([]);
@@ -65,6 +66,7 @@
 		const now = timeTicker.now;
 		return allEvents.map((evt) => ({
 			...evt,
+			id: `${evt.namespace}/${evt.name}`,
 			age: calculateAgeWithTicker(evt.lastSeen || evt.createdAt, now)
 		}));
 	});
@@ -101,14 +103,15 @@
 	// ─── Watch & fetch setup (same pattern as Events page) ────────────────────
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchEvents();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchEvents(clusterId);
 
 			if (eventsWatch) eventsWatch.unsubscribe();
 
 			eventsWatch = useBatchWatch<K8sEvent>({
-				clusterId: activeCluster.id,
+				clusterId,
 				resourceType: 'events',
 				getItems: () => allEvents,
 				setItems: (v) => { allEvents = v; },
@@ -132,10 +135,9 @@
 
 	// ─── Data fetching ────────────────────────────────────────────────────────
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -145,12 +147,10 @@
 		}
 	}
 
-	async function fetchEvents() {
-		if (!activeCluster?.id) return;
+	async function fetchEvents(clusterId: number) {
 		loading = true;
 		try {
-			// Always fetch all events — namespace / severity filtering is done client-side
-			const res = await fetch(`/api/clusters/${activeCluster.id}/events?namespace=all`);
+			const res = await fetch(`/api/clusters/${clusterId}/events?namespace=all`);
 			const data = await res.json();
 			if (data.success && data.events) {
 				allEvents = data.events;
@@ -191,7 +191,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchEvents}
+				onclick={() => { if (activeClusterId) fetchEvents(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

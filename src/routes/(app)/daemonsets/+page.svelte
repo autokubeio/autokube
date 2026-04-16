@@ -38,6 +38,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allDaemonSets = $state<DaemonSet[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -73,6 +74,7 @@
 		const currentTime = timeTicker.now;
 		return allDaemonSets.map((ds) => ({
 			...ds,
+			id: `${ds.namespace}/${ds.name}`,
 			age: calculateAgeWithTicker(ds.createdAt, currentTime)
 		}));
 	});
@@ -117,9 +119,10 @@
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchDaemonSets();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchDaemonSets(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -128,7 +131,7 @@
 			daemonSetsWatch = useBatchWatch<DaemonSet>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'daemonsets',
@@ -164,10 +167,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -177,15 +179,13 @@
 		}
 	}
 
-	async function fetchDaemonSets() {
-		if (!activeCluster?.id) return;
-
+	async function fetchDaemonSets(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/daemonsets?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/daemonsets?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.daemonSets) {
@@ -267,7 +267,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchDaemonSets();
+		if (activeClusterId) fetchDaemonSets(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -288,7 +288,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchDaemonSets}
+				onclick={() => { if (activeClusterId) fetchDaemonSets(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -298,7 +298,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchDaemonSets(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchDaemonSets(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -353,7 +353,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredDaemonSets}
-				keyField="name"
+				keyField="id"
 				name={TableName.daemonsets}
 				columns={daemonSetsColumns}
 				{sortState}
@@ -374,7 +374,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = daemonset.namespace;
-								fetchDaemonSets();
+								if (activeClusterId) fetchDaemonSets(activeClusterId, daemonset.namespace);
 							}}
 						/>
 					{:else if column.id === 'desired'}

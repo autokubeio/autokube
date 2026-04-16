@@ -39,6 +39,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allIngresses = $state<Ingress[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -73,6 +74,7 @@
 		const currentTime = timeTicker.now;
 		return allIngresses.map((ing) => ({
 			...ing,
+			id: `${ing.namespace}/${ing.name}`,
 			age: calculateAgeWithTicker(ing.createdAt, currentTime)
 		}));
 	});
@@ -109,9 +111,10 @@
 	let ingressWatch: ReturnType<typeof useBatchWatch<Ingress>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchIngresses();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchIngresses(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -120,7 +123,7 @@
 			ingressWatch = useBatchWatch<Ingress>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'ingresses',
@@ -156,10 +159,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -169,15 +171,13 @@
 		}
 	}
 
-	async function fetchIngresses() {
-		if (!activeCluster?.id) return;
-
+	async function fetchIngresses(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/ingresses?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/ingresses?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.ingresses) {
@@ -231,7 +231,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchIngresses();
+		if (activeClusterId) fetchIngresses(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -252,7 +252,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchIngresses}
+				onclick={() => { if (activeClusterId) fetchIngresses(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -262,7 +262,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchIngresses(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchIngresses(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -317,7 +317,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredIngresses}
-				keyField="name"
+				keyField="id"
 				name={TableName.ingress}
 				columns={ingressColumns}
 				{sortState}
@@ -338,7 +338,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = ing.namespace;
-								fetchIngresses();
+								if (activeClusterId) fetchIngresses(activeClusterId, ing.namespace);
 							}}
 						/>
 					{:else if column.id === 'hosts'}

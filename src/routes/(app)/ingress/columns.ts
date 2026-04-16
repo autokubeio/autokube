@@ -16,7 +16,7 @@ export type Ingress = {
 	createdAt: string;
 };
 
-export type IngressWithAge = Ingress & { age: string };
+export type IngressWithAge = Ingress & { age: string; id: string };
 
 /**
  * Format hosts for display

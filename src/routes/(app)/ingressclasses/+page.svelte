@@ -29,6 +29,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allIngressClasses = $state<IngressClass[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -90,15 +91,16 @@
 	let ingressClassWatch: ReturnType<typeof useBatchWatch<IngressClass>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchIngressClasses();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchIngressClasses(clusterId);
 
 			if (ingressClassWatch) ingressClassWatch.unsubscribe();
 
 			ingressClassWatch = useBatchWatch<IngressClass>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'ingressclasses',
@@ -130,14 +132,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchIngressClasses() {
-		if (!activeCluster?.id) return;
-
+	async function fetchIngressClasses(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/clusters/${activeCluster.id}/ingressclasses`);
+			const res = await fetch(`/api/clusters/${clusterId}/ingressclasses`);
 			const data = await res.json();
 
 			if (data.success && data.ingressClasses) {
@@ -191,7 +191,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchIngressClasses();
+		if (activeClusterId) fetchIngressClasses(activeClusterId);
 	}
 </script>
 
@@ -212,7 +212,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchIngressClasses}
+				onclick={() => { if (activeClusterId) fetchIngressClasses(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

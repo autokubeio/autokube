@@ -31,6 +31,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allConfigMaps = $state<ConfigMap[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -99,9 +100,10 @@
 	let configMapsWatch: ReturnType<typeof useBatchWatch<ConfigMap>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchConfigMaps();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchConfigMaps(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
@@ -110,7 +112,7 @@
 			configMapsWatch = useBatchWatch<ConfigMap>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'configmaps',
@@ -146,10 +148,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -159,15 +160,13 @@
 		}
 	}
 
-	async function fetchConfigMaps() {
-		if (!activeCluster?.id) return;
-
+	async function fetchConfigMaps(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/configmaps?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/configmaps?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.configMaps) {
@@ -221,7 +220,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchConfigMaps();
+		if (activeClusterId) fetchConfigMaps(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -242,7 +241,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchConfigMaps}
+				onclick={() => { if (activeClusterId) fetchConfigMaps(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -252,7 +251,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchConfigMaps(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchConfigMaps(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -328,7 +327,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = cm.namespace;
-								fetchConfigMaps();
+								if (activeClusterId) fetchConfigMaps(activeClusterId, cm.namespace);
 							}}
 						/>
 					{:else if column.id === 'dataCount'}

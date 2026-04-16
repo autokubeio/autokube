@@ -28,6 +28,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allClusterRoleBindings = $state<ClusterRoleBinding[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -90,15 +91,16 @@
 	let crbWatch: ReturnType<typeof useBatchWatch<ClusterRoleBinding>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchClusterRoleBindings();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchClusterRoleBindings(clusterId);
 
 			if (crbWatch) crbWatch.unsubscribe();
 
 			crbWatch = useBatchWatch<ClusterRoleBinding>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'clusterrolebindings',
@@ -130,14 +132,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchClusterRoleBindings() {
-		if (!activeCluster?.id) return;
-
+	async function fetchClusterRoleBindings(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/clusters/${activeCluster.id}/clusterrolebindings`);
+			const res = await fetch(`/api/clusters/${clusterId}/clusterrolebindings`);
 			const data = await res.json();
 
 			if (data.success && data.clusterRoleBindings) {
@@ -191,7 +191,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchClusterRoleBindings();
+		if (activeClusterId) fetchClusterRoleBindings(activeClusterId);
 	}
 </script>
 
@@ -212,7 +212,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchClusterRoleBindings}
+				onclick={() => { if (activeClusterId) fetchClusterRoleBindings(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

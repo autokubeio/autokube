@@ -40,6 +40,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allDeployments = $state<Deployment[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -81,6 +82,7 @@
 		const currentTime = timeTicker.now;
 		return allDeployments.map((d) => ({
 			...d,
+			id: `${d.namespace}/${d.name}`,
 			age: calculateAgeWithTicker(d.createdAt, currentTime)
 		}));
 	});
@@ -124,16 +126,17 @@
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchDeployments();
+		const clusterId = activeClusterId;
+		const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
-			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchDeployments(clusterId, selectedNamespace);
 
 			if (deploymentsWatch) deploymentsWatch.unsubscribe();
 
 			deploymentsWatch = useBatchWatch<Deployment>({
-				clusterId: activeCluster.id,
+				clusterId,
 				resourceType: 'deployments',
 				namespace: ns,
 				getItems: () => allDeployments,
@@ -157,10 +160,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -170,15 +172,14 @@
 		}
 	}
 
-	async function fetchDeployments() {
-		if (!activeCluster?.id) return;
+	async function fetchDeployments(clusterId: number, nsParam: string) {
 
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/deployments?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/deployments?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.deployments) {
@@ -294,7 +295,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchDeployments();
+		if (activeClusterId) fetchDeployments(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -315,7 +316,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchDeployments}
+				onclick={() => { if (activeClusterId) fetchDeployments(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -325,7 +326,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchDeployments(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchDeployments(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -380,7 +381,7 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredDeployments}
-				keyField="name"
+				keyField="id"
 				name={TableName.deployments}
 				columns={deploymentsColumns}
 				{sortState}
@@ -401,7 +402,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = deployment.namespace;
-								fetchDeployments();
+								if (activeClusterId) fetchDeployments(activeClusterId, deployment.namespace);
 							}}
 						/>
 					{:else if column.id === 'ready'}

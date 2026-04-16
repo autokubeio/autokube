@@ -34,6 +34,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allClusterRoles = $state<ClusterRole[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -92,15 +93,16 @@
 	let crsWatch: ReturnType<typeof useBatchWatch<ClusterRole>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchClusterRoles();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchClusterRoles(clusterId);
 
 			if (crsWatch) crsWatch.unsubscribe();
 
 			crsWatch = useBatchWatch<ClusterRole>({
 
 
-				clusterId: activeCluster.id,
+				clusterId,
 
 
 				resourceType: 'clusterroles',
@@ -132,14 +134,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchClusterRoles() {
-		if (!activeCluster?.id) return;
-
+	async function fetchClusterRoles(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/clusters/${activeCluster.id}/clusterroles`);
+			const res = await fetch(`/api/clusters/${clusterId}/clusterroles`);
 			const data = await res.json();
 
 			if (data.success && data.clusterRoles) {
@@ -193,7 +193,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchClusterRoles();
+		if (activeClusterId) fetchClusterRoles(activeClusterId);
 	}
 </script>
 
@@ -214,7 +214,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchClusterRoles}
+				onclick={() => { if (activeClusterId) fetchClusterRoles(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
