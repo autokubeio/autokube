@@ -6,7 +6,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { calculateAge, formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -19,7 +19,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import { type Namespace, type NamespaceWithAge, getStatusIcon, getStatusColor } from './columns';
 	import { DataTableView, type DataTableSortState } from '$lib/components/data-table-view';
@@ -28,10 +28,18 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allNamespaces = $state<Namespace[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 	// Detail dialog
 	let showDetailDialog = $state(false);
 	let selectedNamespace = $state<NamespaceWithAge | null>(null);
@@ -80,26 +88,33 @@
 	let sortState = $state<DataTableSortState | undefined>(undefined);
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let namespacesWatch: ReturnType<typeof useResourceWatch<Namespace>> | null = null;
+	let namespacesWatch: ReturnType<typeof useBatchWatch<Namespace>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
 
 			if (namespacesWatch) namespacesWatch.unsubscribe();
 
-			namespacesWatch = useResourceWatch<Namespace>({
-				clusterId: activeCluster.id,
+			namespacesWatch = useBatchWatch<Namespace>({
+
+
+				clusterId,
+
+
 				resourceType: 'namespaces',
-				onAdded: (ns) => {
-					allNamespaces = arrayAdd(allNamespaces, ns, (n) => n.name);
-				},
-				onModified: (ns) => {
-					allNamespaces = arrayModify(allNamespaces, ns, (n) => n.name);
-				},
-				onDeleted: (ns) => {
-					allNamespaces = arrayDelete(allNamespaces, ns, (n) => n.name);
-				}
+
+
+				getItems: () => allNamespaces,
+
+
+				setItems: (v) => { allNamespaces = v; },
+
+
+				keyFn: (i) => i.name
+
+
 			});
 
 			namespacesWatch.subscribe();
@@ -117,14 +132,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
-
+	async function fetchNamespaces(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 
 			if (data.success && data.namespaces) {
@@ -179,7 +192,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchNamespaces();
+		if (activeClusterId) fetchNamespaces(activeClusterId);
 	}
 </script>
 
@@ -200,7 +213,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchNamespaces}
+				onclick={() => { if (activeClusterId) fetchNamespaces(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -213,7 +226,8 @@
 			<Input
 				placeholder="Search namespaces..."
 				class="h-8 w-full pl-8 text-xs sm:w-56"
-				bind:value={searchQuery}
+				value={searchQuery}
+				oninput={(e) => scheduleSearch(e.currentTarget.value)}
 			/>
 		</div>
 	</div>
@@ -259,6 +273,7 @@
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, namespace: NamespaceWithAge, rowState)}
 					{#if column.id === 'name'}

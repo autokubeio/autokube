@@ -20,7 +20,7 @@ export type K8sEvent = {
 	createdAt: string;
 };
 
-export type K8sEventWithAge = K8sEvent & { age: string };
+export type K8sEventWithAge = K8sEvent & { age: string; id: string };
 
 /**
  * Event type color mapping

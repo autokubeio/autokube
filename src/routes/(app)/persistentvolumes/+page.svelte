@@ -6,7 +6,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -19,7 +19,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type PV,
@@ -34,10 +34,18 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allPVs = $state<PV[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -89,27 +97,33 @@
 	});
 
 	// SSE watch
-	let pvsWatch: ReturnType<typeof useResourceWatch<PV>> | null = null;
+	let pvsWatch: ReturnType<typeof useBatchWatch<PV>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchPVs();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchPVs(clusterId);
 
 			if (pvsWatch) pvsWatch.unsubscribe();
 
-			pvsWatch = useResourceWatch<PV>({
-				clusterId: activeCluster.id,
+			pvsWatch = useBatchWatch<PV>({
+
+
+				clusterId,
+
+
 				resourceType: 'persistentvolumes',
-				// PVs are cluster-scoped, no namespace
-				onAdded: (pv) => {
-					allPVs = arrayAdd(allPVs, pv, (i) => i.name);
-				},
-				onModified: (pv) => {
-					allPVs = arrayModify(allPVs, pv, (i) => i.name);
-				},
-				onDeleted: (pv) => {
-					allPVs = arrayDelete(allPVs, pv, (i) => i.name);
-				}
+
+
+				getItems: () => allPVs,
+
+
+				setItems: (v) => { allPVs = v; },
+
+
+				keyFn: (i) => i.name
+
+
 			});
 
 			pvsWatch.subscribe();
@@ -127,14 +141,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchPVs() {
-		if (!activeCluster?.id) return;
-
+	async function fetchPVs(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/clusters/${activeCluster.id}/persistentvolumes`);
+			const res = await fetch(`/api/clusters/${clusterId}/persistentvolumes`);
 			const data = await res.json();
 
 			if (data.success && data.persistentVolumes) {
@@ -188,7 +200,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchPVs();
+		if (activeClusterId) fetchPVs(activeClusterId);
 	}
 </script>
 
@@ -209,7 +221,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchPVs}
+				onclick={() => { if (activeClusterId) fetchPVs(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -223,7 +235,8 @@
 				<Input
 					placeholder="Search persistent volumes..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -261,6 +274,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, pv: PVWithAge, rowState)}
 					{#if column.id === 'name'}

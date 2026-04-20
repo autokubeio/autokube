@@ -2,9 +2,8 @@
 	import { onDestroy } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
-	import { arrayAdd, arrayModify, arrayDelete } from '$lib/utils/arrays';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
@@ -31,6 +30,7 @@
 	// ─── State ────────────────────────────────────────────────────────────────
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allEvents = $state<K8sEvent[]>([]);
 	let loading = $state(false);
 	let namespaces = $state<string[]>([]);
@@ -38,6 +38,13 @@
 	let selectedType = $state('all');
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -51,7 +58,7 @@
 	const timeTicker = createTimeTicker(10_000);
 
 	// Plain let — NOT $state. Assigning inside $effect would re-trigger it.
-	let eventsWatch: ReturnType<typeof useResourceWatch<K8sEvent>> | null = null;
+	let eventsWatch: ReturnType<typeof useBatchWatch<K8sEvent>> | null = null;
 
 	// ─── Derived ──────────────────────────────────────────────────────────────
 
@@ -59,6 +66,7 @@
 		const now = timeTicker.now;
 		return allEvents.map((evt) => ({
 			...evt,
+			id: `${evt.namespace}/${evt.name}`,
 			age: calculateAgeWithTicker(evt.lastSeen || evt.createdAt, now)
 		}));
 	});
@@ -95,24 +103,19 @@
 	// ─── Watch & fetch setup (same pattern as Events page) ────────────────────
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchEvents();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchEvents(clusterId);
 
 			if (eventsWatch) eventsWatch.unsubscribe();
 
-			eventsWatch = useResourceWatch<K8sEvent>({
-				clusterId: activeCluster.id,
+			eventsWatch = useBatchWatch<K8sEvent>({
+				clusterId,
 				resourceType: 'events',
-				onAdded: (evt) => {
-					allEvents = arrayAdd(allEvents, evt, (e) => `${e.namespace}/${e.name}`);
-				},
-				onModified: (evt) => {
-					allEvents = arrayModify(allEvents, evt, (e) => `${e.namespace}/${e.name}`);
-				},
-				onDeleted: (evt) => {
-					allEvents = arrayDelete(allEvents, evt, (e) => `${e.namespace}/${e.name}`);
-				}
+				getItems: () => allEvents,
+				setItems: (v) => { allEvents = v; },
+				keyFn: (i) => `${i.namespace}/${i.name}`
 			});
 			eventsWatch.subscribe();
 		} else {
@@ -132,10 +135,9 @@
 
 	// ─── Data fetching ────────────────────────────────────────────────────────
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -145,12 +147,10 @@
 		}
 	}
 
-	async function fetchEvents() {
-		if (!activeCluster?.id) return;
+	async function fetchEvents(clusterId: number) {
 		loading = true;
 		try {
-			// Always fetch all events — namespace / severity filtering is done client-side
-			const res = await fetch(`/api/clusters/${activeCluster.id}/events?namespace=all`);
+			const res = await fetch(`/api/clusters/${clusterId}/events?namespace=all`);
 			const data = await res.json();
 			if (data.success && data.events) {
 				allEvents = data.events;
@@ -191,7 +191,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchEvents}
+				onclick={() => { if (activeClusterId) fetchEvents(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh

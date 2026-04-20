@@ -24,7 +24,7 @@ export type Deployment = {
 	createdAt: string;
 };
 
-export type DeploymentWithAge = Deployment & { age: string };
+export type DeploymentWithAge = Deployment & { age: string; id: string };
 
 /**
  * Derive deployment health status from replicas

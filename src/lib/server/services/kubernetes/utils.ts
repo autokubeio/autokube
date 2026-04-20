@@ -807,9 +807,8 @@ function formatK8sError(error: unknown): string {
 		return error.message;
 	}
 
-	// Server errors
+	// Server errors — callers log with full context, no generic log here
 	if (msg.includes('http 5') || msg.includes('internal server error')) {
-		console.warn('[K8s] Server error:', error.message);
 		return 'Kubernetes API server error';
 	}
 

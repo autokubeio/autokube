@@ -154,7 +154,7 @@ export const servicesColumns: ColumnConfig[] = [
 	{ id: 'externalIP', label: 'External IP', width: 140, minWidth: 120, sortable: true },
 	{ id: 'ports', label: 'Ports', width: 160, minWidth: 120, sortable: true },
 	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
-	{ id: 'actions', label: '', fixed: 'end', width: 80, resizable: false }
+	{ id: 'actions', label: '', fixed: 'end', width: 100, resizable: false }
 ];
 
 export const ingressColumns: ColumnConfig[] = [
@@ -165,7 +165,7 @@ export const ingressColumns: ColumnConfig[] = [
 	{ id: 'ingressClass', label: 'Class', width: 120, minWidth: 100, sortable: true },
 	{ id: 'tls', label: 'TLS', width: 80, minWidth: 60, sortable: true },
 	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
-	{ id: 'actions', label: '', fixed: 'end', width: 80, resizable: false }
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
 ];
 
 export const daemonSetsColumns: ColumnConfig[] = [
@@ -205,7 +205,7 @@ export const configMapsColumns: ColumnConfig[] = [
 	{ id: 'namespace', label: 'Namespace', width: 120, minWidth: 100, sortable: true },
 	{ id: 'dataCount', label: 'Data', width: 80, minWidth: 60, sortable: true },
 	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
-	{ id: 'actions', label: '', fixed: 'end', width: 80, resizable: false }
+	{ id: 'actions', label: '', fixed: 'end', width: 100, resizable: false }
 ];
 
 export const secretsColumns: ColumnConfig[] = [
@@ -277,7 +277,7 @@ export const ingressClassesColumns: ColumnConfig[] = [
 	{ id: 'controller', label: 'Controller', width: 280, minWidth: 200, sortable: true },
 	{ id: 'isDefault', label: 'Default', width: 90, minWidth: 70, sortable: true },
 	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
-	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+	{ id: 'actions', label: '', fixed: 'end', width: 100, resizable: false }
 ];
 
 export const persistentVolumeClaimsColumns: ColumnConfig[] = [

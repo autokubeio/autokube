@@ -32,7 +32,7 @@ export type Pod = {
 	createdAt: string;
 };
 
-export type PodWithAge = Pod & { age: string };
+export type PodWithAge = Pod & { age: string; id: string };
 
 /**
  * Status color mapping for pod status badges

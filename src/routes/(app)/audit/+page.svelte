@@ -475,6 +475,7 @@
 			onSortChange={(state) => (sortState = state)}
 			onRowClick={handleRowClick}
 			wrapperClass="border rounded-lg"
+			virtualScroll={true}
 		>
 			{#snippet cell(column, log: AuditLogWithCluster)}
 				{#if column.id === 'createdAt'}

@@ -21,7 +21,7 @@ export type Job = {
 	createdAt: string;
 };
 
-export type JobWithAge = Job & { age: string };
+export type JobWithAge = Job & { age: string; id: string };
 
 /**
  * Derive job health status

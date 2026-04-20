@@ -33,6 +33,7 @@
 	import { toast } from 'svelte-sonner';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allReleases = $state<HelmRelease[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -57,6 +58,7 @@
 		const currentTime = timeTicker.now;
 		return allReleases.map((r) => ({
 			...r,
+			id: `${r.namespace}/${r.name}`,
 			age: calculateAgeWithTicker(r.updatedAt || r.createdAt, currentTime)
 		}));
 	});
@@ -99,9 +101,10 @@
 
 	// Fetch on cluster change
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchReleases();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchReleases(clusterId, selectedNamespace);
 		} else {
 			allReleases = [];
 			namespaces = [];
@@ -112,10 +115,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -125,13 +127,12 @@
 		}
 	}
 
-	async function fetchReleases() {
-		if (!activeCluster?.id) return;
+	async function fetchReleases(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 		try {
-			const nsParam = selectedNamespace !== 'all' ? `&namespace=${selectedNamespace}` : '';
-			const res = await fetch(`/api/helm-releases?cluster=${activeCluster.id}${nsParam}`);
+			const ns = nsParam !== 'all' ? `&namespace=${nsParam}` : '';
+			const res = await fetch(`/api/helm-releases?cluster=${clusterId}${ns}`);
 			const data = await res.json();
 			if (data.success) {
 				allReleases = data.releases ?? [];
@@ -201,7 +202,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchReleases}
+				onclick={() => { if (activeClusterId) fetchReleases(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -227,7 +228,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchReleases(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchReleases(activeClusterId, ns); }}
 			/>
 
 			<!-- Search -->
@@ -279,13 +280,14 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredReleases}
-				keyField="name"
+				keyField="id"
 				name={TableName.helmreleases}
 				columns={helmReleasesColumns}
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, release: HelmReleaseWithAge)}
 					{#if column.id === 'name'}
@@ -299,7 +301,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = release.namespace;
-								fetchReleases();
+								if (activeClusterId) fetchReleases(activeClusterId, release.namespace);
 							}}
 						/>
 					{:else if column.id === 'chart'}

@@ -20,7 +20,7 @@ export type Endpoint = {
 	createdAt: string;
 };
 
-export type EndpointWithAge = Endpoint & { age: string };
+export type EndpointWithAge = Endpoint & { age: string; id: string };
 
 /**
  * Extract all addresses from subsets

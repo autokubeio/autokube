@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -23,7 +23,7 @@
 		ArrowUpFromLine
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type NetworkPolicy,
@@ -37,12 +37,20 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allPolicies = $state<NetworkPolicy[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -64,6 +72,7 @@
 		const currentTime = timeTicker.now;
 		return allPolicies.map((p) => ({
 			...p,
+			id: `${p.namespace}/${p.name}`,
 			age: calculateAgeWithTicker(p.createdAt, currentTime)
 		}));
 	});
@@ -97,30 +106,39 @@
 	});
 
 	// SSE watch
-	let policiesWatch: ReturnType<typeof useResourceWatch<NetworkPolicy>> | null = null;
+	let policiesWatch: ReturnType<typeof useBatchWatch<NetworkPolicy>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchPolicies();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchPolicies(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
 			if (policiesWatch) policiesWatch.unsubscribe();
 
-			policiesWatch = useResourceWatch<NetworkPolicy>({
-				clusterId: activeCluster.id,
+			policiesWatch = useBatchWatch<NetworkPolicy>({
+
+
+				clusterId,
+
+
 				resourceType: 'networkpolicies',
+
+
 				namespace: ns,
-				onAdded: (p) => {
-					allPolicies = arrayAdd(allPolicies, p, (i) => `${i.namespace}/${i.name}`);
-				},
-				onModified: (p) => {
-					allPolicies = arrayModify(allPolicies, p, (i) => `${i.namespace}/${i.name}`);
-				},
-				onDeleted: (p) => {
-					allPolicies = arrayDelete(allPolicies, p, (i) => `${i.namespace}/${i.name}`);
-				}
+
+
+				getItems: () => allPolicies,
+
+
+				setItems: (v) => { allPolicies = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			policiesWatch.subscribe();
@@ -139,10 +157,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -152,15 +169,13 @@
 		}
 	}
 
-	async function fetchPolicies() {
-		if (!activeCluster?.id) return;
-
+	async function fetchPolicies(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/networkpolicies?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/networkpolicies?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.networkPolicies) {
@@ -214,7 +229,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchPolicies();
+		if (activeClusterId) fetchPolicies(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -235,7 +250,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchPolicies}
+				onclick={() => { if (activeClusterId) fetchPolicies(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -245,7 +260,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchPolicies(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchPolicies(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -254,7 +269,8 @@
 				<Input
 					placeholder="Search network policies..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -299,13 +315,14 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredPolicies}
-				keyField="name"
+				keyField="id"
 				name={TableName.networkpolicies}
 				columns={networkPoliciesColumns}
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, policy: NetworkPolicyWithAge, rowState)}
 					{#if column.id === 'name'}
@@ -319,7 +336,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = policy.namespace;
-								fetchPolicies();
+								if (activeClusterId) fetchPolicies(activeClusterId, policy.namespace);
 							}}
 						/>
 					{:else if column.id === 'policyTypes'}

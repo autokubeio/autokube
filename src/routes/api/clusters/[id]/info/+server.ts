@@ -58,9 +58,25 @@ type K8sNodeMetricsList = {
 /** Parse CPU string to millicores */
 function parseCpuToMillicores(cpu: string): number {
 	if (!cpu) return 0;
-	if (cpu.endsWith('n')) return parseInt(cpu) / 1_000_000;
-	if (cpu.endsWith('m')) return parseInt(cpu);
-	return parseFloat(cpu) * 1000;
+	// Nanocores (e.g. "3500000000n") → millicores
+	if (cpu.endsWith('n')) {
+		const nc = parseInt(cpu.slice(0, -1));
+		return isNaN(nc) ? 0 : Math.round(nc / 1_000_000);
+	}
+	// Millicores (e.g. "3500m")
+	if (cpu.endsWith('m')) {
+		const mc = parseInt(cpu.slice(0, -1));
+		return isNaN(mc) ? 0 : mc;
+	}
+	// Bare number: standard K8s capacity returns whole cores (e.g. "4").
+	// Some non-standard metrics servers return fractional millicores without a
+	// unit suffix (e.g. "109617.3" meaning 109617 millicores, not 109617 cores).
+	// Heuristic: no realistic single node has >1000 CPU cores, so values above
+	// that threshold are treated as millicores rather than cores.
+	const val = parseFloat(cpu);
+	if (isNaN(val)) return 0;
+	if (val > 1000) return Math.round(val);
+	return Math.round(val * 1000);
 }
 
 /** Parse memory string to bytes */

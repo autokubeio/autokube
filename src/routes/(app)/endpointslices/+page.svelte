@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type EndpointSlice,
@@ -37,12 +37,20 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allEndpointSlices = $state<EndpointSlice[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -96,30 +104,39 @@
 		return result;
 	});
 
-	let endpointSlicesWatch: ReturnType<typeof useResourceWatch<EndpointSlice>> | null = null;
+	let endpointSlicesWatch: ReturnType<typeof useBatchWatch<EndpointSlice>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchEndpointSlices();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchEndpointSlices(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
 			if (endpointSlicesWatch) endpointSlicesWatch.unsubscribe();
 
-			endpointSlicesWatch = useResourceWatch<EndpointSlice>({
-				clusterId: activeCluster.id,
+			endpointSlicesWatch = useBatchWatch<EndpointSlice>({
+
+
+				clusterId,
+
+
 				resourceType: 'endpointslices',
+
+
 				namespace: ns,
-				onAdded: (es) => {
-					allEndpointSlices = arrayAdd(allEndpointSlices, es, (e) => `${e.namespace}/${e.name}`);
-				},
-				onModified: (es) => {
-					allEndpointSlices = arrayModify(allEndpointSlices, es, (e) => `${e.namespace}/${e.name}`);
-				},
-				onDeleted: (es) => {
-					allEndpointSlices = arrayDelete(allEndpointSlices, es, (e) => `${e.namespace}/${e.name}`);
-				}
+
+
+				getItems: () => allEndpointSlices,
+
+
+				setItems: (v) => { allEndpointSlices = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			endpointSlicesWatch.subscribe();
@@ -138,10 +155,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -151,15 +167,13 @@
 		}
 	}
 
-	async function fetchEndpointSlices() {
-		if (!activeCluster?.id) return;
-
+	async function fetchEndpointSlices(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/endpointslices?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/endpointslices?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.endpointSlices) {
@@ -213,7 +227,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchEndpointSlices();
+		if (activeClusterId) fetchEndpointSlices(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -234,7 +248,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchEndpointSlices}
+				onclick={() => { if (activeClusterId) fetchEndpointSlices(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -244,7 +258,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchEndpointSlices(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchEndpointSlices(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -253,7 +267,8 @@
 				<Input
 					placeholder="Search endpoint slices..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -298,13 +313,14 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredEndpointSlices}
-				keyField="name"
+				keyField="id"
 				name={TableName.endpointslices}
 				columns={endpointSlicesColumns}
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, es: EndpointSliceWithAge, rowState)}
 					{#if column.id === 'name'}
@@ -318,7 +334,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = es.namespace;
-								fetchEndpointSlices();
+								if (activeClusterId) fetchEndpointSlices(activeClusterId, es.namespace);
 							}}
 						/>
 					{:else if column.id === 'addressType'}

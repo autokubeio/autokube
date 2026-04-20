@@ -9,7 +9,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		Loader2
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type K8sEvent,
@@ -35,12 +35,20 @@
 	import { toast } from 'svelte-sonner';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allEvents = $state<K8sEvent[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 	let selectedType = $state('all');
 
 	// Detail dialog
@@ -59,6 +67,7 @@
 		const currentTime = timeTicker.now;
 		return allEvents.map((evt) => ({
 			...evt,
+			id: `${evt.namespace}/${evt.name}`,
 			age: calculateAgeWithTicker(evt.lastSeen || evt.createdAt, currentTime)
 		}));
 	});
@@ -104,31 +113,40 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let eventsWatch: ReturnType<typeof useResourceWatch<K8sEvent>> | null = null;
+	let eventsWatch: ReturnType<typeof useBatchWatch<K8sEvent>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchEvents();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchEvents(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
 			if (eventsWatch) eventsWatch.unsubscribe();
 
-			eventsWatch = useResourceWatch<K8sEvent>({
-				clusterId: activeCluster.id,
+			eventsWatch = useBatchWatch<K8sEvent>({
+
+
+				clusterId,
+
+
 				resourceType: 'events',
+
+
 				namespace: ns,
-				onAdded: (evt) => {
-					allEvents = arrayAdd(allEvents, evt, (e) => `${e.namespace}/${e.name}`);
-				},
-				onModified: (evt) => {
-					allEvents = arrayModify(allEvents, evt, (e) => `${e.namespace}/${e.name}`);
-				},
-				onDeleted: (evt) => {
-					allEvents = arrayDelete(allEvents, evt, (e) => `${e.namespace}/${e.name}`);
-				}
+
+
+				getItems: () => allEvents,
+
+
+				setItems: (v) => { allEvents = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			eventsWatch.subscribe();
@@ -147,10 +165,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -160,15 +177,13 @@
 		}
 	}
 
-	async function fetchEvents() {
-		if (!activeCluster?.id) return;
-
+	async function fetchEvents(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/events?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/events?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.events) {
@@ -229,7 +244,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchEvents}
+				onclick={() => { if (activeClusterId) fetchEvents(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -255,7 +270,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchEvents(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchEvents(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -264,7 +279,8 @@
 				<Input
 					placeholder="Search events..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -309,13 +325,14 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredEvents}
-				keyField="name"
+				keyField="id"
 				name={TableName.events}
 				columns={eventsColumns}
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, evt: K8sEventWithAge, rowState)}
 					{#if column.id === 'type'}
@@ -332,7 +349,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = evt.namespace;
-								fetchEvents();
+								if (activeClusterId) fetchEvents(activeClusterId, evt.namespace);
 							}}
 						/>
 					{:else if column.id === 'reason'}

@@ -8,7 +8,7 @@
 	import MetricsCell from '$lib/components/metrics-cell.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson, parseCpu, parseMemory } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -24,7 +24,7 @@
 		MoreHorizontal
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type Node,
@@ -41,6 +41,7 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	const metricsEnabled = $derived(
 		clustersStore.clusters.find((c) => c.id === activeCluster?.id)?.metricsEnabled !== false
 	);
@@ -118,35 +119,32 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let nodesWatch: ReturnType<typeof useResourceWatch<Node>> | null = null;
+	let nodesWatch: ReturnType<typeof useBatchWatch<Node>> | null = null;
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Watch for cluster changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNodes();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNodes(clusterId);
 
 			if (nodesWatch) nodesWatch.unsubscribe();
 
-			nodesWatch = useResourceWatch<Node>({
-				clusterId: activeCluster.id,
+			nodesWatch = useBatchWatch<Node>({
+				clusterId,
 				resourceType: 'nodes',
-				// Nodes are cluster-scoped, no namespace
-				onAdded: (node) => {
-					allNodes = arrayAdd(allNodes, node, (n) => n.name);
-				},
-				onModified: (node) => {
-					// Preserve the real pod count from the last fetchNodes() — the SSE
-					// watch only sends the node object which has no running pod count.
-					const existing = allNodes.find((n) => n.name === node.name);
-					allNodes = arrayModify(
-						allNodes,
-						{ ...node, podsCount: existing?.podsCount ?? 0 },
-						(n) => n.name
-					);
-				},
-				onDeleted: (node) => {
-					allNodes = arrayDelete(allNodes, node, (n) => n.name);
-				}
+				getItems: () => allNodes,
+				setItems: (v) => { allNodes = v; },
+				keyFn: (n) => n.name,
+				// Preserve the real pod count from the last fetchNodes() — the SSE
+				// watch only sends the node object which has no running pod count.
+				onModifiedItem: (existing, incoming) => ({ ...incoming, podsCount: existing.podsCount ?? 0 })
 			});
 
 			nodesWatch.subscribe();
@@ -163,18 +161,17 @@
 	onDestroy(() => {
 		nodesWatch?.unsubscribe();
 		timeTicker.stop();
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
 	});
 
-	async function fetchNodes() {
-		if (!activeCluster?.id) return;
-
+	async function fetchNodes(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
 			const [nodesRes, metricsRes] = await Promise.all([
-				fetch(`/api/clusters/${activeCluster.id}/nodes`),
-				fetch(`/api/clusters/${activeCluster.id}/nodes/metrics`)
+				fetch(`/api/clusters/${clusterId}/nodes`),
+				fetch(`/api/clusters/${clusterId}/nodes/metrics`)
 			]);
 
 			const nodesData = await nodesRes.json();
@@ -217,7 +214,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchNodes();
+		if (activeClusterId) fetchNodes(activeClusterId);
 	}
 
 	async function handleCordon(node: NodeWithAge, unschedulable: boolean) {
@@ -232,7 +229,7 @@
 			const data = await res.json();
 			if (!data.success) throw new Error(data.error ?? 'Failed');
 			toast.success(`Node ${node.name} ${unschedulable ? 'cordoned' : 'uncordoned'} successfully`);
-			fetchNodes();
+			if (activeClusterId) fetchNodes(activeClusterId);
 		} catch (err) {
 			console.error('[Nodes] Cordon failed:', err);
 			toast.error(`Failed to ${unschedulable ? 'cordon' : 'uncordon'} node: ${err instanceof Error ? err.message : err}`);
@@ -259,7 +256,7 @@
 			const data = await res.json();
 			if (!data.success) throw new Error(data.error ?? 'Failed');
 			toast.success(`Node ${drainTarget.name} drained (${data.evicted} evicted, ${data.skipped} skipped)`);
-			fetchNodes();
+			if (activeClusterId) fetchNodes(activeClusterId);
 		} catch (err) {
 			console.error('[Nodes] Drain failed:', err);
 			toast.error(`Failed to drain node: ${err instanceof Error ? err.message : err}`);
@@ -287,7 +284,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchNodes}
+				onclick={() => { if (activeClusterId) fetchNodes(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -302,7 +299,8 @@
 				<Input
 					placeholder="Search nodes..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -350,6 +348,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, node: NodeWithAge, rowState)}
 					{#if column.id === 'name'}

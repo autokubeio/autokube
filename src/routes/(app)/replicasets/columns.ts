@@ -18,7 +18,7 @@ export type ReplicaSet = {
 	createdAt: string;
 };
 
-export type ReplicaSetWithAge = ReplicaSet & { age: string };
+export type ReplicaSetWithAge = ReplicaSet & { age: string; id: string };
 
 /**
  * Derive replicaset health status

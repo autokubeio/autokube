@@ -10,7 +10,7 @@ export type NetworkPolicy = {
 	createdAt: string;
 };
 
-export type NetworkPolicyWithAge = NetworkPolicy & { age: string };
+export type NetworkPolicyWithAge = NetworkPolicy & { age: string; id: string };
 
 /**
  * Format policy types for display

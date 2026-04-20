@@ -21,7 +21,7 @@ export type StatefulSet = {
 	createdAt: string;
 };
 
-export type StatefulSetWithAge = StatefulSet & { age: string };
+export type StatefulSetWithAge = StatefulSet & { age: string; id: string };
 
 /**
  * Derive statefulset health status

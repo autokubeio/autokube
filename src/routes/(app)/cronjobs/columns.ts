@@ -17,7 +17,7 @@ export type CronJob = {
 	createdAt: string;
 };
 
-export type CronJobWithAge = CronJob & { age: string };
+export type CronJobWithAge = CronJob & { age: string; id: string };
 
 /**
  * Derive cronjob health status

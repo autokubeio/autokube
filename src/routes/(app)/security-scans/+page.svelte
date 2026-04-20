@@ -777,6 +777,7 @@
 			expandable
 			bind:expandedKeys
 			onExpandChange={handleExpandChange}
+			virtualScroll={true}
 		>
 			{#snippet cell(column, scan: ImageScanListItem)}
 				{#if column.id === 'image'}

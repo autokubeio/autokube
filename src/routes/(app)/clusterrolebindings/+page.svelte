@@ -6,7 +6,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -19,7 +19,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import { type ClusterRoleBinding, type ClusterRoleBindingWithAge, formatSubjects } from './columns';
 	import { DataTableView, type DataTableSortState } from '$lib/components/data-table-view';
@@ -28,10 +28,18 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allClusterRoleBindings = $state<ClusterRoleBinding[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -80,26 +88,33 @@
 	});
 
 	// SSE watch
-	let crbWatch: ReturnType<typeof useResourceWatch<ClusterRoleBinding>> | null = null;
+	let crbWatch: ReturnType<typeof useBatchWatch<ClusterRoleBinding>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchClusterRoleBindings();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchClusterRoleBindings(clusterId);
 
 			if (crbWatch) crbWatch.unsubscribe();
 
-			crbWatch = useResourceWatch<ClusterRoleBinding>({
-				clusterId: activeCluster.id,
+			crbWatch = useBatchWatch<ClusterRoleBinding>({
+
+
+				clusterId,
+
+
 				resourceType: 'clusterrolebindings',
-				onAdded: (crb) => {
-					allClusterRoleBindings = arrayAdd(allClusterRoleBindings, crb, (i) => i.name);
-				},
-				onModified: (crb) => {
-					allClusterRoleBindings = arrayModify(allClusterRoleBindings, crb, (i) => i.name);
-				},
-				onDeleted: (crb) => {
-					allClusterRoleBindings = arrayDelete(allClusterRoleBindings, crb, (i) => i.name);
-				}
+
+
+				getItems: () => allClusterRoleBindings,
+
+
+				setItems: (v) => { allClusterRoleBindings = v; },
+
+
+				keyFn: (i) => i.name
+
+
 			});
 
 			crbWatch.subscribe();
@@ -117,14 +132,12 @@
 		timeTicker.stop();
 	});
 
-	async function fetchClusterRoleBindings() {
-		if (!activeCluster?.id) return;
-
+	async function fetchClusterRoleBindings(clusterId: number) {
 		loading = true;
 		error = null;
 
 		try {
-			const res = await fetch(`/api/clusters/${activeCluster.id}/clusterrolebindings`);
+			const res = await fetch(`/api/clusters/${clusterId}/clusterrolebindings`);
 			const data = await res.json();
 
 			if (data.success && data.clusterRoleBindings) {
@@ -178,7 +191,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchClusterRoleBindings();
+		if (activeClusterId) fetchClusterRoleBindings(activeClusterId);
 	}
 </script>
 
@@ -199,7 +212,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchClusterRoleBindings}
+				onclick={() => { if (activeClusterId) fetchClusterRoleBindings(activeClusterId); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -213,7 +226,8 @@
 				<Input
 					placeholder="Search cluster role bindings..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -251,6 +265,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, crb: ClusterRoleBindingWithAge, rowState)}
 					{#if column.id === 'name'}

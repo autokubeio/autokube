@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -24,7 +24,7 @@
 		Minus
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type ReplicaSet,
@@ -40,12 +40,20 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allReplicaSets = $state<ReplicaSet[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -74,6 +82,7 @@
 		const currentTime = timeTicker.now;
 		return allReplicaSets.map((rs) => ({
 			...rs,
+			id: `${rs.namespace}/${rs.name}`,
 			age: calculateAgeWithTicker(rs.createdAt, currentTime)
 		}));
 	});
@@ -112,31 +121,40 @@
 	});
 
 	// Plain let — NOT $state. Writing inside a $effect would re-trigger it.
-	let replicaSetsWatch: ReturnType<typeof useResourceWatch<ReplicaSet>> | null = null;
+	let replicaSetsWatch: ReturnType<typeof useBatchWatch<ReplicaSet>> | null = null;
 
 	// Watch for cluster/namespace changes
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchReplicaSets();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchReplicaSets(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
 			if (replicaSetsWatch) replicaSetsWatch.unsubscribe();
 
-			replicaSetsWatch = useResourceWatch<ReplicaSet>({
-				clusterId: activeCluster.id,
+			replicaSetsWatch = useBatchWatch<ReplicaSet>({
+
+
+				clusterId,
+
+
 				resourceType: 'replicasets',
+
+
 				namespace: ns,
-				onAdded: (rs) => {
-					allReplicaSets = arrayAdd(allReplicaSets, rs, (r) => `${r.namespace}/${r.name}`);
-				},
-				onModified: (rs) => {
-					allReplicaSets = arrayModify(allReplicaSets, rs, (r) => `${r.namespace}/${r.name}`);
-				},
-				onDeleted: (rs) => {
-					allReplicaSets = arrayDelete(allReplicaSets, rs, (r) => `${r.namespace}/${r.name}`);
-				}
+
+
+				getItems: () => allReplicaSets,
+
+
+				setItems: (v) => { allReplicaSets = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			replicaSetsWatch.subscribe();
@@ -155,10 +173,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -168,15 +185,13 @@
 		}
 	}
 
-	async function fetchReplicaSets() {
-		if (!activeCluster?.id) return;
-
+	async function fetchReplicaSets(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/replicasets?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/replicasets?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.replicaSets) {
@@ -292,7 +307,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchReplicaSets();
+		if (activeClusterId) fetchReplicaSets(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -313,7 +328,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchReplicaSets}
+				onclick={() => { if (activeClusterId) fetchReplicaSets(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -323,7 +338,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchReplicaSets(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchReplicaSets(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -332,7 +347,8 @@
 				<Input
 					placeholder="Search replicasets..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -377,13 +393,14 @@
 		<div class="flex min-h-0 flex-1">
 			<DataTableView
 				data={filteredReplicaSets}
-				keyField="name"
+				keyField="id"
 				name={TableName.replicasets}
 				columns={replicaSetsColumns}
 				{sortState}
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, replicaset: ReplicaSetWithAge, rowState)}
 					{#if column.id === 'name'}
@@ -397,7 +414,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = replicaset.namespace;
-								fetchReplicaSets();
+								if (activeClusterId) fetchReplicaSets(activeClusterId, replicaset.namespace);
 							}}
 						/>
 					{:else if column.id === 'desired'}

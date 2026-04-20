@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -22,7 +22,7 @@
 		Gauge
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type ResourceQuota,
@@ -37,12 +37,20 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allQuotas = $state<ResourceQuota[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -95,30 +103,39 @@
 	});
 
 	// SSE watch
-	let quotasWatch: ReturnType<typeof useResourceWatch<ResourceQuota>> | null = null;
+	let quotasWatch: ReturnType<typeof useBatchWatch<ResourceQuota>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchQuotas();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchQuotas(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
 			if (quotasWatch) quotasWatch.unsubscribe();
 
-			quotasWatch = useResourceWatch<ResourceQuota>({
-				clusterId: activeCluster.id,
+			quotasWatch = useBatchWatch<ResourceQuota>({
+
+
+				clusterId,
+
+
 				resourceType: 'resourcequotas',
+
+
 				namespace: ns,
-				onAdded: (q) => {
-					allQuotas = arrayAdd(allQuotas, q, (i) => `${i.namespace}/${i.name}`);
-				},
-				onModified: (q) => {
-					allQuotas = arrayModify(allQuotas, q, (i) => `${i.namespace}/${i.name}`);
-				},
-				onDeleted: (q) => {
-					allQuotas = arrayDelete(allQuotas, q, (i) => `${i.namespace}/${i.name}`);
-				}
+
+
+				getItems: () => allQuotas,
+
+
+				setItems: (v) => { allQuotas = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			quotasWatch.subscribe();
@@ -137,10 +154,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -150,15 +166,13 @@
 		}
 	}
 
-	async function fetchQuotas() {
-		if (!activeCluster?.id) return;
-
+	async function fetchQuotas(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/resourcequotas?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/resourcequotas?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.resourceQuotas) {
@@ -212,7 +226,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchQuotas();
+		if (activeClusterId) fetchQuotas(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -233,7 +247,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchQuotas}
+				onclick={() => { if (activeClusterId) fetchQuotas(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -243,7 +257,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchQuotas(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchQuotas(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -252,7 +266,8 @@
 				<Input
 					placeholder="Search resource quotas..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -290,6 +305,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, quota: ResourceQuotaWithAge, rowState)}
 					{#if column.id === 'name'}
@@ -303,7 +319,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = quota.namespace;
-								fetchQuotas();
+								if (activeClusterId) fetchQuotas(activeClusterId, quota.namespace);
 							}}
 						/>
 					{:else if column.id === 'age'}

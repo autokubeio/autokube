@@ -14,7 +14,7 @@ export type HelmRelease = {
 	description: string;
 };
 
-export type HelmReleaseWithAge = HelmRelease & { age: string };
+export type HelmReleaseWithAge = HelmRelease & { age: string; id: string };
 
 export function getStatusColor(status: string): string {
 	const map: Record<string, string> = {

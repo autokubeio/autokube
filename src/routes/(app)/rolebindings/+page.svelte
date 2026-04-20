@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import { type RoleBinding, type RoleBindingWithAge, formatSubjects } from './columns';
 	import { DataTableView, type DataTableSortState } from '$lib/components/data-table-view';
@@ -30,12 +30,20 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allRoleBindings = $state<RoleBinding[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -89,30 +97,39 @@
 	});
 
 	// SSE watch
-	let rbWatch: ReturnType<typeof useResourceWatch<RoleBinding>> | null = null;
+	let rbWatch: ReturnType<typeof useBatchWatch<RoleBinding>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchRoleBindings();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchRoleBindings(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
 			if (rbWatch) rbWatch.unsubscribe();
 
-			rbWatch = useResourceWatch<RoleBinding>({
-				clusterId: activeCluster.id,
+			rbWatch = useBatchWatch<RoleBinding>({
+
+
+				clusterId,
+
+
 				resourceType: 'rolebindings',
+
+
 				namespace: ns,
-				onAdded: (rb) => {
-					allRoleBindings = arrayAdd(allRoleBindings, rb, (i) => `${i.namespace}/${i.name}`);
-				},
-				onModified: (rb) => {
-					allRoleBindings = arrayModify(allRoleBindings, rb, (i) => `${i.namespace}/${i.name}`);
-				},
-				onDeleted: (rb) => {
-					allRoleBindings = arrayDelete(allRoleBindings, rb, (i) => `${i.namespace}/${i.name}`);
-				}
+
+
+				getItems: () => allRoleBindings,
+
+
+				setItems: (v) => { allRoleBindings = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			rbWatch.subscribe();
@@ -131,10 +148,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -144,15 +160,13 @@
 		}
 	}
 
-	async function fetchRoleBindings() {
-		if (!activeCluster?.id) return;
-
+	async function fetchRoleBindings(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/rolebindings?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/rolebindings?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.roleBindings) {
@@ -206,7 +220,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchRoleBindings();
+		if (activeClusterId) fetchRoleBindings(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -227,7 +241,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchRoleBindings}
+				onclick={() => { if (activeClusterId) fetchRoleBindings(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -237,7 +251,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchRoleBindings(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchRoleBindings(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -246,7 +260,8 @@
 				<Input
 					placeholder="Search role bindings..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -284,6 +299,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, rb: RoleBindingWithAge, rowState)}
 					{#if column.id === 'name'}
@@ -297,7 +313,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = rb.namespace;
-								fetchRoleBindings();
+								if (activeClusterId) fetchRoleBindings(activeClusterId, rb.namespace);
 							}}
 						/>
 					{:else if column.id === 'role'}

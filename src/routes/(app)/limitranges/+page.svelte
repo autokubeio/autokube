@@ -8,7 +8,7 @@
 	import ConfirmDelete from '$lib/components/confirm-delete.svelte';
 	import { cn } from '$lib/utils';
 	import { formatCreatedAt, tryPrettyJson } from '$lib/utils/formatters';
-	import { arrayAdd, arrayModify, arrayDelete, arraySort } from '$lib/utils/arrays';
+	import { arraySort } from '$lib/utils/arrays';
 	import { createTimeTicker, calculateAgeWithTicker } from '$lib/utils/time-ticker.svelte';
 	import {
 		RefreshCw,
@@ -21,7 +21,7 @@
 		FileCode
 	} from 'lucide-svelte';
 	import { clusterStore } from '$lib/stores/cluster.svelte';
-	import { useResourceWatch } from '$lib/hooks/use-resource-watch.svelte';
+	import { useBatchWatch } from '$lib/hooks/use-batch-watch.svelte';
 	import { onDestroy } from 'svelte';
 	import {
 		type LimitRange,
@@ -35,12 +35,20 @@
 	import ResourceDrawer, { type ResourceRef } from '$lib/components/resource-drawer.svelte';
 
 	const activeCluster = $derived(clusterStore.active);
+	const activeClusterId = $derived(clusterStore.active?.id ?? null);
 	let allLimitRanges = $state<LimitRange[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let namespaces = $state<string[]>([]);
 	let selectedNamespace = $state('all');
 	let searchQuery = $state('');
+
+	// Search debounce
+	let _searchTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleSearch(value: string) {
+		if (_searchTimer !== null) clearTimeout(_searchTimer);
+		_searchTimer = setTimeout(() => { searchQuery = value; }, 150);
+	}
 
 	// Detail dialog
 	let showDetailDialog = $state(false);
@@ -93,30 +101,39 @@
 	});
 
 	// SSE watch
-	let lrWatch: ReturnType<typeof useResourceWatch<LimitRange>> | null = null;
+	let lrWatch: ReturnType<typeof useBatchWatch<LimitRange>> | null = null;
 
 	$effect(() => {
-		if (activeCluster) {
-			fetchNamespaces();
-			fetchLimitRanges();
+		const clusterId = activeClusterId;
+		if (clusterId) {
+			fetchNamespaces(clusterId);
+			fetchLimitRanges(clusterId, selectedNamespace);
 
 			const ns = selectedNamespace === 'all' ? undefined : selectedNamespace;
 
 			if (lrWatch) lrWatch.unsubscribe();
 
-			lrWatch = useResourceWatch<LimitRange>({
-				clusterId: activeCluster.id,
+			lrWatch = useBatchWatch<LimitRange>({
+
+
+				clusterId,
+
+
 				resourceType: 'limitranges',
+
+
 				namespace: ns,
-				onAdded: (lr) => {
-					allLimitRanges = arrayAdd(allLimitRanges, lr, (i) => `${i.namespace}/${i.name}`);
-				},
-				onModified: (lr) => {
-					allLimitRanges = arrayModify(allLimitRanges, lr, (i) => `${i.namespace}/${i.name}`);
-				},
-				onDeleted: (lr) => {
-					allLimitRanges = arrayDelete(allLimitRanges, lr, (i) => `${i.namespace}/${i.name}`);
-				}
+
+
+				getItems: () => allLimitRanges,
+
+
+				setItems: (v) => { allLimitRanges = v; },
+
+
+				keyFn: (i) => `${i.namespace}/${i.name}`
+
+
 			});
 
 			lrWatch.subscribe();
@@ -135,10 +152,9 @@
 		timeTicker.stop();
 	});
 
-	async function fetchNamespaces() {
-		if (!activeCluster?.id) return;
+	async function fetchNamespaces(clusterId: number) {
 		try {
-			const res = await fetch(`/api/namespaces?cluster=${activeCluster.id}`);
+			const res = await fetch(`/api/namespaces?cluster=${clusterId}`);
 			const data = await res.json();
 			if (data.success && data.namespaces) {
 				namespaces = data.namespaces.map((ns: { name: string }) => ns.name).sort();
@@ -148,15 +164,13 @@
 		}
 	}
 
-	async function fetchLimitRanges() {
-		if (!activeCluster?.id) return;
-
+	async function fetchLimitRanges(clusterId: number, nsParam: string) {
 		loading = true;
 		error = null;
 
 		try {
-			const ns = selectedNamespace === 'all' ? 'all' : selectedNamespace;
-			const res = await fetch(`/api/clusters/${activeCluster.id}/limitranges?namespace=${ns}`);
+			const ns = nsParam === 'all' ? 'all' : nsParam;
+			const res = await fetch(`/api/clusters/${clusterId}/limitranges?namespace=${ns}`);
 			const data = await res.json();
 
 			if (data.success && data.limitRanges) {
@@ -210,7 +224,7 @@
 	}
 
 	function handleYamlSuccess() {
-		fetchLimitRanges();
+		if (activeClusterId) fetchLimitRanges(activeClusterId, selectedNamespace);
 	}
 </script>
 
@@ -231,7 +245,7 @@
 				size="sm"
 				class="h-7 gap-1.5 text-xs"
 				disabled={loading || !activeCluster}
-				onclick={fetchLimitRanges}
+				onclick={() => { if (activeClusterId) fetchLimitRanges(activeClusterId, selectedNamespace); }}
 			>
 				<RefreshCw class={cn('size-3', loading && 'animate-spin')} />
 				Refresh
@@ -241,7 +255,7 @@
 			<NamespaceSelect
 				{namespaces}
 				value={selectedNamespace}
-				onChange={(ns) => { selectedNamespace = ns; fetchLimitRanges(); }}
+				onChange={(ns: string) => { selectedNamespace = ns; if (activeClusterId) fetchLimitRanges(activeClusterId, ns); }}
 			/>
 			<div class="relative flex-1 sm:flex-none">
 				<Search
@@ -250,7 +264,8 @@
 				<Input
 					placeholder="Search limit ranges..."
 					class="h-8 w-full pl-8 text-xs sm:w-56"
-					bind:value={searchQuery}
+					value={searchQuery}
+					oninput={(e) => scheduleSearch(e.currentTarget.value)}
 				/>
 			</div>
 		</div>
@@ -288,6 +303,7 @@
 				onSortChange={(state) => (sortState = state)}
 				onRowClick={openDetail}
 				wrapperClass="border rounded-lg"
+				virtualScroll={true}
 			>
 				{#snippet cell(column, lr: LimitRangeWithAge, rowState)}
 					{#if column.id === 'name'}
@@ -301,7 +317,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								selectedNamespace = lr.namespace;
-								fetchLimitRanges();
+								if (activeClusterId) fetchLimitRanges(activeClusterId, lr.namespace);
 							}}
 						/>
 					{:else if column.id === 'age'}

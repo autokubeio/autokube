@@ -21,7 +21,7 @@ export type DaemonSet = {
 	createdAt: string;
 };
 
-export type DaemonSetWithAge = DaemonSet & { age: string };
+export type DaemonSetWithAge = DaemonSet & { age: string; id: string };
 
 /**
  * Derive daemonset health status
