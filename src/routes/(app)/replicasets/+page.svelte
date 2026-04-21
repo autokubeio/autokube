@@ -60,7 +60,7 @@
 	let selectedReplicaSet = $state<ReplicaSetWithAge | null>(null);
 	let deleting = $state(false);
 	let scaling = $state(false);
-	let restarting = $state(false);
+	let restartingKey = $state<string | null>(null);
 
 	// Scale dialog
 	let showScaleDialog = $state(false);
@@ -263,7 +263,7 @@
 		if (!activeCluster?.id) return;
 
 		try {
-			restarting = true;
+			restartingKey = `${name}/${namespace}`;
 			const response = await fetch('/api/replicasets/restart', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -281,7 +281,7 @@
 		} catch (err: any) {
 			toast.error(`Failed to restart replicaset: ${err.message}`);
 		} finally {
-			restarting = false;
+			restartingKey = null;
 		}
 	}
 
@@ -450,14 +450,14 @@
 								variant="ghost"
 								size="icon"
 								class="h-6 w-6 text-muted-foreground hover:cursor-pointer"
-								disabled={restarting}
+								disabled={restartingKey === `${replicaset.name}/${replicaset.namespace}`}
 								onclick={(e) => {
 									e.stopPropagation();
 									handleRestart(replicaset.name, replicaset.namespace);
 								}}
 								title="Restart"
 							>
-								<RotateCw class={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
+								<RotateCw class={cn('h-3.5 w-3.5', restartingKey === `${replicaset.name}/${replicaset.namespace}` && 'animate-spin')} />
 							</Button>
 							<Button
 								variant="ghost"
