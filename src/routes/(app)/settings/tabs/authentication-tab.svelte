@@ -44,6 +44,7 @@
 	import MfaDisableDialog from '$lib/components/mfa-disable-dialog.svelte';
 	import MfaSetupDialog from '$lib/components/mfa-setup-dialog.svelte';
 	import EnterpriseFeatureLock from '$lib/components/enterprise-feature-lock.svelte';
+	import { goto } from '$app/navigation';
 	import { authSettingsStore } from '$lib/stores/auth-settings.svelte';
 	import { usersStore } from '$lib/stores/users.svelte';
 	import { rolesStore } from '$lib/stores/roles.svelte';
@@ -395,6 +396,7 @@
 			await authSettings.updateSettings({ authEnabled: enabled });
 			if (enabled) {
 				toast.success('Authentication enabled');
+				await goto('/login');
 			}
 		} catch (err) {
 			console.error('[Auth Tab] Toggle error:', err);
