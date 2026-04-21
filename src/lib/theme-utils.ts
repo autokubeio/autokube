@@ -679,6 +679,17 @@ export const DARK_THEMES: ThemeMeta[] = [
 		}
 	},
 	{
+		id: 'night-owl',
+		name: 'Night Owl',
+		preview: {
+			bg: '#011627',
+			sidebar: '#01111d',
+			fg: '#d6deeb',
+			primary: '#82aaff',
+			border: '#1d3b53'
+		}
+	},
+	{
 		id: 'github-dark',
 		name: 'GitHub Dark',
 		preview: {

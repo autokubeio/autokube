@@ -522,6 +522,20 @@ type ConfigCacheEntry =
 
 const _clusterConfigCache = new Map<number, ConfigCacheEntry>();
 
+// Suppress repeated connection-error logs for the same cluster.
+// Background health checks poll every cluster on a fixed interval; without
+// this, every poll cycle floods the log with the same ECONNREFUSED warning.
+const CLUSTER_ERROR_LOG_COOLDOWN = 5 * 60_000; // 5 minutes
+const _clusterErrorLogTs = new Map<number, number>();
+
+function shouldLogClusterError(clusterId: number): boolean {
+	const now = Date.now();
+	const last = _clusterErrorLogTs.get(clusterId) ?? 0;
+	if (now - last < CLUSTER_ERROR_LOG_COOLDOWN) return false;
+	_clusterErrorLogTs.set(clusterId, now);
+	return true;
+}
+
 /**
  * Make a Kubernetes API request for a specific cluster by ID
  * This is the recommended high-level function for all cluster operations
@@ -611,7 +625,7 @@ export async function makeClusterRequest<T = unknown>(
 	} catch (error) {
 		return {
 			success: false,
-			error: formatK8sError(error)
+			error: formatK8sError(error, clusterId)
 		};
 	}
 }
@@ -743,49 +757,51 @@ export async function testConnectionCredentials(credentials: {
  * Known/expected errors (connectivity, auth, config) are logged at warn level
  * with just the message. Unexpected errors are logged at error level with full detail.
  */
-function formatK8sError(error: unknown): string {
+function formatK8sError(error: unknown, clusterId?: number): string {
 	if (!(error instanceof Error)) {
 		console.error('[K8s] Unexpected error:', error);
 		return 'Unknown error occurred';
 	}
 
 	const msg = error.message.toLowerCase();
+	// For per-cluster transient network errors, suppress repeated logs within the cooldown window
+	const canLog = clusterId === undefined || shouldLogClusterError(clusterId);
 
 	// Encryption / credential errors — warn only, no stack trace
 	if (msg.includes('could not be decrypted') || msg.includes('encryption key')) {
-		console.warn('[K8s]', error.message);
+		if (canLog) console.warn('[K8s]', error.message);
 		return error.message;
 	}
 
 	// Network errors — expected when clusters are unreachable, warn only
 	if (msg.includes('econnrefused')) {
-		console.warn('[K8s] Connection refused:', error.message);
+		if (canLog) console.warn('[K8s] Connection refused:', error.message);
 		return 'Connection refused - API server is not reachable';
 	}
 	if (msg.includes('etimedout') || msg.includes('timeout')) {
-		console.warn('[K8s] Timeout:', error.message);
+		if (canLog) console.warn('[K8s] Timeout:', error.message);
 		return 'Connection timeout - cluster is unreachable';
 	}
 	if (msg.includes('enotfound') || msg.includes('getaddrinfo')) {
-		console.warn('[K8s] Host not found:', error.message);
+		if (canLog) console.warn('[K8s] Host not found:', error.message);
 		return 'Host not found - check API server URL';
 	}
 
 	// TLS/SSL errors
 	if (msg.includes('certificate') || msg.includes('ssl') || msg.includes('tls')) {
-		console.warn('[K8s] TLS error:', error.message);
+		if (canLog) console.warn('[K8s] TLS error:', error.message);
 		return 'TLS/SSL certificate verification failed';
 	}
 
 	// Authentication errors
 	if (msg.includes('http 401') || msg.includes('unauthorized')) {
-		console.warn('[K8s] Auth failed:', error.message);
+		if (canLog) console.warn('[K8s] Auth failed:', error.message);
 		return 'Authentication failed - invalid credentials';
 	}
 
 	// Authorization errors
 	if (msg.includes('http 403') || msg.includes('forbidden')) {
-		console.warn('[K8s] Access denied:', error.message);
+		if (canLog) console.warn('[K8s] Access denied:', error.message);
 		return 'Access denied - insufficient permissions';
 	}
 

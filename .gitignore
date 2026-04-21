@@ -31,3 +31,10 @@ docs
 
 .venv
 .vscode
+
+CLAUDE.md
+skills-lock.json
+.claude
+.agents
+
+
