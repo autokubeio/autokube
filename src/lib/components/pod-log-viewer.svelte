@@ -48,7 +48,8 @@
 		ChevronUp,
 		ArrowUp,
 		ArrowDown,
-		Brain
+		Brain,
+		History
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import AiLogAnalysis from '$lib/components/ai-log-analysis.svelte';
@@ -74,6 +75,7 @@
 
 	// ── Extra state
 	let showAiAnalysis = $state(false);
+	let showPrevious = $state(false);
 
 	// ── State ─────────────────────────────────────────────────────────────────
 
@@ -142,9 +144,12 @@
 	// ── Lifecycle ─────────────────────────────────────────────────────────────
 
 	$effect(() => {
-		// Reset container selector when pod changes
+		// Reset container selector and previous-logs mode when pod changes
 		if (pod) {
-			untrack(() => { selectedContainer = pod!.containers[0]?.name ?? ''; });
+			untrack(() => {
+				selectedContainer = pod!.containers[0]?.name ?? '';
+				showPrevious = false;
+			});
 		}
 	});
 
@@ -242,6 +247,7 @@
 			tailLines: '500'
 		});
 		if (selectedContainer) qs.set('container', selectedContainer);
+		if (showPrevious) qs.set('previous', 'true');
 
 		es = new EventSource(`/api/clusters/${clusterId}/pods/logs?${qs}`);
 
@@ -450,6 +456,11 @@
 		}
 	}
 
+	function togglePrevious() {
+		showPrevious = !showPrevious;
+		startStream();
+	}
+
 	// ── Auto-scroll detection ─────────────────────────────────────────────────
 
 	function onScroll() {
@@ -617,6 +628,21 @@
 
 		<!-- Controls -->
 		<div class="flex items-center gap-0.5">
+			<!-- Previous logs toggle -->
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Button
+						variant="ghost"
+						size="icon"
+						class={cn('h-6 w-6 hover:bg-zinc-800', showPrevious ? 'text-amber-400' : 'text-zinc-400')}
+						onclick={togglePrevious}
+					>
+						<History class="size-3.5" />
+					</Button>
+				</Tooltip.Trigger>
+				<Tooltip.Content>{showPrevious ? 'Showing previous container logs' : 'Show previous container logs'}</Tooltip.Content>
+			</Tooltip.Root>
+
 			<!-- Search toggle -->
 			<Tooltip.Root>
 				<Tooltip.Trigger>
