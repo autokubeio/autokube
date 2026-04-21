@@ -1,6 +1,12 @@
 import type { LayoutDashboard } from 'lucide-svelte';
 import { Server } from 'lucide-svelte';
-import { clustersStore } from './clusters.svelte';
+import { clustersStore, type ClusterPublic } from './clusters.svelte';
+
+function endpointLabel(c: ClusterPublic): string {
+	if (c.authType === 'agent') return 'Agent';
+	if (c.authType === 'kubeconfig') return c.context || 'kubeconfig';
+	return c.apiServer || c.context || 'Unknown';
+}
 
 const ACTIVE_CLUSTER_KEY = 'autokube:activeClusterId';
 
@@ -71,7 +77,7 @@ export const clusterStore = {
 				name: c.name,
 				icon: Server,
 				status: 'unknown' as const,
-				region: c.apiServer || 'Unknown',
+				region: endpointLabel(c),
 				health: 'Unknown' as const,
 				version: 'Loading...',
 				nodes: 0,
@@ -262,7 +268,7 @@ export const clusterStore = {
 					name: raw.name,
 					icon: Server,
 					status: 'unknown' as const,
-					region: raw.apiServer || 'Unknown',
+					region: endpointLabel(raw),
 					health: 'Unknown' as const,
 					version: 'Connecting...',
 					nodes: 0,
@@ -284,7 +290,7 @@ export const clusterStore = {
 			all[existingIndex] = {
 				...all[existingIndex],
 				name: raw.name,
-				region: raw.apiServer || all[existingIndex].region
+				region: endpointLabel(raw)
 			};
 			if (active?.id === id) {
 				active = all[existingIndex];
