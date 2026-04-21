@@ -410,14 +410,20 @@
 	// ─── Context (getters keep values reactive for consumers) ─────────────────
 
 	setDataTableContext({
-		name: name,
-		keyField: keyField as keyof unknown,
+		get name() {
+			return name;
+		},
+		get keyField() {
+			return keyField as keyof unknown;
+		},
 		get orderedColumns() {
 			return orderedColumns;
 		},
 		getDisplayWidth,
 		getColumnConfig: (id) => columnConfigMap.get(id),
-		selectable,
+		get selectable() {
+			return selectable;
+		},
 		isSelected,
 		toggleSelection,
 		selectAll,

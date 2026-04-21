@@ -235,8 +235,8 @@ export async function watchResource(
 				});
 
 				res.on('error', (err: any) => {
-					// Don't log ECONNRESET (expected when aborting)
-					if (err?.code !== 'ECONNRESET') {
+					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+					if (!silent.includes(err?.code)) {
 						console.error('[Watch Resource] Response error:', err);
 					}
 					reject(err);
@@ -244,8 +244,8 @@ export async function watchResource(
 			});
 
 			req.on('error', (err: any) => {
-				// Don't log ECONNRESET (expected when aborting)
-				if (err?.code !== 'ECONNRESET') {
+				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+				if (!silent.includes(err?.code)) {
 					console.error('[Watch Resource] Request error:', err);
 				}
 				reject(err);
@@ -360,8 +360,8 @@ export async function watchResourceByCluster(
 				});
 
 				res.on('error', (err: any) => {
-					// Don't log ECONNRESET (expected when aborting)
-					if (err?.code !== 'ECONNRESET') {
+					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+					if (!silent.includes(err?.code)) {
 						console.error('[Watch Resource] Response error:', err);
 					}
 					reject(err);
@@ -369,8 +369,8 @@ export async function watchResourceByCluster(
 			});
 
 			req.on('error', (err: any) => {
-				// Don't log ECONNRESET (expected when aborting)
-				if (err?.code !== 'ECONNRESET') {
+				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+				if (!silent.includes(err?.code)) {
 					console.error('[Watch Resource] Request error:', err);
 				}
 				reject(err);
