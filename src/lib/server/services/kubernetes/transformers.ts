@@ -33,9 +33,11 @@ interface K8sPodObject {
 	metadata?: {
 		name?: string;
 		namespace?: string;
+		uid?: string;
 		creationTimestamp?: string;
 		labels?: Record<string, string>;
 		annotations?: Record<string, string>;
+		ownerReferences?: Array<{ kind?: string; name?: string; uid?: string }>;
 	};
 	spec?: {
 		nodeName?: string;
@@ -142,6 +144,7 @@ export function transformPod(rawPod: K8sPodObject): PodInfo {
 	return {
 		name: metadata.name || 'unknown',
 		namespace: metadata.namespace || 'default',
+		uid: metadata.uid,
 		status: podStatus,
 		phase,
 		ready: `${readyCount}/${totalCount}`,
@@ -150,6 +153,8 @@ export function transformPod(rawPod: K8sPodObject): PodInfo {
 		ip: status.podIP || 'N/A',
 		labels: metadata.labels || {},
 		annotations: metadata.annotations || {},
+		ownerKind: metadata.ownerReferences?.[0]?.kind,
+		ownerName: metadata.ownerReferences?.[0]?.name,
 		containers,
 		conditions: (status.conditions || []).map((c) => ({
 			type: c.type || 'Unknown',
@@ -444,9 +449,11 @@ interface K8sReplicaSetObject {
 	metadata?: {
 		name?: string;
 		namespace?: string;
+		uid?: string;
 		creationTimestamp?: string;
 		labels?: Record<string, string>;
 		annotations?: Record<string, string>;
+		ownerReferences?: Array<{ kind?: string; name?: string; uid?: string }>;
 	};
 	spec?: {
 		replicas?: number;
@@ -492,10 +499,13 @@ export function transformReplicaSet(raw: unknown) {
 	return {
 		name: metadata.name || 'unknown',
 		namespace: metadata.namespace || 'default',
+		uid: metadata.uid,
 		desired,
 		current,
 		ready,
 		status: rsStatus,
+		ownerKind: metadata.ownerReferences?.[0]?.kind,
+		ownerName: metadata.ownerReferences?.[0]?.name,
 		selector: spec.selector?.matchLabels || {},
 		labels: metadata.labels || {},
 		annotations: metadata.annotations || {},

@@ -73,12 +73,15 @@ export interface NamespaceInfo {
 }
 
 export interface PodInfo extends Required<BaseResourceInfo> {
+	uid?: string;
 	status: string;
 	phase: string;
 	ready: string;
 	restarts: number;
 	node: string;
 	ip: string;
+	ownerKind?: string;
+	ownerName?: string;
 	containers: Array<
 		ContainerInfo & {
 			ready: boolean;

@@ -86,10 +86,19 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 		return json({ error: 'Invalid cluster ID' }, { status: 400 });
 	}
 
-	const nsPath = namespace === 'all' ? '' : `/namespaces/${namespace}`;
-	const prefix = namespace === 'all' ? '' : `/namespaces/${namespace}`;
+	// ?resources=pods,deployments,... — only fetch the requested types.
+	// The client fires multiple parallel requests and merges results as they arrive,
+	// so no single slow resource (pods, jobs) blocks the whole page.
+	const resourceParam = url.searchParams.get('resources');
+	const requested = resourceParam ? new Set(resourceParam.split(',')) : null; // null = all
+	const want = (type: string) => !requested || requested.has(type);
 
-	// Fetch all resources in parallel
+	const empty = { success: true as const, data: { items: [] } };
+	const k8s = <T>(type: string, allPath: string, nsPath: string) =>
+		want(type)
+			? makeClusterRequest<K8sListResult<T>>(clusterId, namespace === 'all' ? allPath : nsPath, 30000)
+			: Promise.resolve(empty);
+
 	const [
 		podsRes,
 		deploymentsRes,
@@ -101,15 +110,15 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 		jobsRes,
 		cronJobsRes
 	] = await Promise.all([
-		makeClusterRequest<K8sListResult<K8sPod>>(clusterId, namespace === 'all' ? '/api/v1/pods' : `/api/v1/namespaces/${namespace}/pods`, 30000),
-		makeClusterRequest<K8sListResult<K8sDeployment>>(clusterId, namespace === 'all' ? '/apis/apps/v1/deployments' : `/apis/apps/v1/namespaces/${namespace}/deployments`, 30000),
-		makeClusterRequest<K8sListResult<K8sReplicaSet>>(clusterId, namespace === 'all' ? '/apis/apps/v1/replicasets' : `/apis/apps/v1/namespaces/${namespace}/replicasets`, 30000),
-		makeClusterRequest<K8sListResult<K8sDaemonSet>>(clusterId, namespace === 'all' ? '/apis/apps/v1/daemonsets' : `/apis/apps/v1/namespaces/${namespace}/daemonsets`, 30000),
-		makeClusterRequest<K8sListResult<K8sStatefulSet>>(clusterId, namespace === 'all' ? '/apis/apps/v1/statefulsets' : `/apis/apps/v1/namespaces/${namespace}/statefulsets`, 30000),
-		makeClusterRequest<K8sListResult<K8sService>>(clusterId, namespace === 'all' ? '/api/v1/services' : `/api/v1/namespaces/${namespace}/services`, 30000),
-		makeClusterRequest<K8sListResult<K8sIngress>>(clusterId, namespace === 'all' ? '/apis/networking.k8s.io/v1/ingresses' : `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`, 30000),
-		makeClusterRequest<K8sListResult<K8sJob>>(clusterId, namespace === 'all' ? '/apis/batch/v1/jobs' : `/apis/batch/v1/namespaces/${namespace}/jobs`, 30000),
-		makeClusterRequest<K8sListResult<K8sCronJob>>(clusterId, namespace === 'all' ? '/apis/batch/v1/cronjobs' : `/apis/batch/v1/namespaces/${namespace}/cronjobs`, 30000)
+		k8s<K8sPod>('pods', '/api/v1/pods', `/api/v1/namespaces/${namespace}/pods`),
+		k8s<K8sDeployment>('deployments', '/apis/apps/v1/deployments', `/apis/apps/v1/namespaces/${namespace}/deployments`),
+		k8s<K8sReplicaSet>('replicasets', '/apis/apps/v1/replicasets', `/apis/apps/v1/namespaces/${namespace}/replicasets`),
+		k8s<K8sDaemonSet>('daemonsets', '/apis/apps/v1/daemonsets', `/apis/apps/v1/namespaces/${namespace}/daemonsets`),
+		k8s<K8sStatefulSet>('statefulsets', '/apis/apps/v1/statefulsets', `/apis/apps/v1/namespaces/${namespace}/statefulsets`),
+		k8s<K8sService>('services', '/api/v1/services', `/api/v1/namespaces/${namespace}/services`),
+		k8s<K8sIngress>('ingresses', '/apis/networking.k8s.io/v1/ingresses', `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`),
+		k8s<K8sJob>('jobs', '/apis/batch/v1/jobs', `/apis/batch/v1/namespaces/${namespace}/jobs`),
+		k8s<K8sCronJob>('cronjobs', '/apis/batch/v1/cronjobs', `/apis/batch/v1/namespaces/${namespace}/cronjobs`),
 	]);
 
 	// Process pods
