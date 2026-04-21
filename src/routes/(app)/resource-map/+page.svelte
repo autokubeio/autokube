@@ -404,7 +404,8 @@
 					setter(getter().filter((x) => rkey(x.namespace, x.name) !== k));
 				},
 				onError() {
-					liveError = `Watch connection lost for ${type}`;
+					connecting = false;
+					liveError = 'Cannot connect to cluster';
 				}
 			});
 		}
@@ -420,8 +421,14 @@
 			makeWatch('replicasets', toReplicaSet, () => replicaSets, (v) => { replicaSets = v; })
 		];
 
+		// Safety net: resolve connecting state after 15s even if no events arrive
+		const connectTimeout = setTimeout(() => { if (connecting) connecting = false; }, 15_000);
+
 		ws.forEach((w) => w.subscribe());
-		return () => ws.forEach((w) => w.unsubscribe());
+		return () => {
+			clearTimeout(connectTimeout);
+			ws.forEach((w) => w.unsubscribe());
+		};
 	});
 
 	function reconnect() {

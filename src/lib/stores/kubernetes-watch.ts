@@ -112,13 +112,18 @@ function createEventSource(clusterId: number, resource: string, namespace?: stri
 						reconnectTimers.delete(key);
 					}
 				} else if (data.code === 'CLUSTER_UNREACHABLE') {
-					// K8s API server is down — close and reconnect with backoff
+					// K8s API server is down — notify listeners, close and reconnect with backoff
 					console.warn(`[SSE] Cluster unreachable for ${resource}, backing off…`);
+					notifyListeners(resource, { type: 'ERROR', object: { code: 'CLUSTER_UNREACHABLE' } });
 					es.close();
 					connections.delete(key);
 					scheduleReconnect(clusterId, resource, namespace);
 				} else {
 					console.error(`[SSE] Watch error for ${resource}:`, (data as any).error);
+					// Close and reconnect with backoff instead of leaving the connection open
+					es.close();
+					connections.delete(key);
+					scheduleReconnect(clusterId, resource, namespace);
 				}
 			}
 			// 'connected' messages are silently ignored

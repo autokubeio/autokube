@@ -235,7 +235,7 @@ export async function watchResource(
 				});
 
 				res.on('error', (err: any) => {
-					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
 					if (!silent.includes(err?.code)) {
 						console.error('[Watch Resource] Response error:', err);
 					}
@@ -244,7 +244,7 @@ export async function watchResource(
 			});
 
 			req.on('error', (err: any) => {
-				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
 				if (!silent.includes(err?.code)) {
 					console.error('[Watch Resource] Request error:', err);
 				}
@@ -360,7 +360,7 @@ export async function watchResourceByCluster(
 				});
 
 				res.on('error', (err: any) => {
-					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
 					if (!silent.includes(err?.code)) {
 						console.error('[Watch Resource] Response error:', err);
 					}
@@ -369,7 +369,7 @@ export async function watchResourceByCluster(
 			});
 
 			req.on('error', (err: any) => {
-				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'];
+				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
 				if (!silent.includes(err?.code)) {
 					console.error('[Watch Resource] Request error:', err);
 				}

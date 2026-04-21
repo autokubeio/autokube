@@ -435,9 +435,15 @@ export const GET: RequestHandler = async ({ params, url, request, cookies}) => {
 					console.warn(`[SSE] Config error for ${resource} (cluster ${clusterLabel}): ${msg}`);
 					send({ type: 'ERROR', code: 'CONFIG_ERROR', error: msg });
 					break;
-				} else if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ENOTFOUND') {
+				} else if (
+					code === 'ECONNREFUSED' ||
+					code === 'ETIMEDOUT' ||
+					code === 'ENOTFOUND' ||
+					code === 'FailedToOpenSocket' ||
+					msg.includes('Was there a typo in the url or port')
+				) {
 					// K8s API unreachable — tell the client, pause, then reconnect
-					console.warn(`[SSE] Cluster unreachable for ${resource} (cluster ${clusterLabel}): ${code}`);
+					console.warn(`[SSE] Cluster unreachable for ${resource} (cluster ${clusterLabel}): ${code || msg}`);
 					send({
 						type: 'ERROR',
 						code: 'CLUSTER_UNREACHABLE',
