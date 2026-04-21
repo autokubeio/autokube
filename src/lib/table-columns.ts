@@ -87,6 +87,7 @@ export const podsColumns: ColumnConfig[] = [
 	{ id: 'namespace', label: 'Namespace', width: 120, minWidth: 100, sortable: true },
 	{ id: 'status', label: 'Status', width: 125, minWidth: 110, sortable: true },
 	{ id: 'ready', label: 'Ready', width: 75, minWidth: 65, sortable: true },
+	{ id: 'containers', label: 'Containers', width: 110, minWidth: 80, sortable: true },
 	{ id: 'restarts', label: 'Restarts', width: 80, minWidth: 65, sortable: true },
 	{ id: 'cpu', label: 'CPU', width: 140, minWidth: 120, sortable: true },
 	{ id: 'memory', label: 'Memory', width: 140, minWidth: 120, sortable: true },

@@ -144,7 +144,8 @@
 				createdAt: (val: any) => new Date(val).getTime(),
 				restarts: (val: any) => Number(val),
 				cpu: (val: any) => parseCpu(val || '0'),
-				memory: (val: any) => parseMemory(val || '0')
+				memory: (val: any) => parseMemory(val || '0'),
+				containers: (val: any) => Array.isArray(val) ? val.length : 0
 			});
 		}
 
@@ -568,6 +569,24 @@
 						</div>
 					{:else if column.id === 'ready'}
 						<span class="font-mono text-xs">{pod.ready}</span>
+					{:else if column.id === 'containers'}
+						<div class="flex flex-wrap items-center gap-1">
+							{#each pod.containers as c}
+								<span
+									title="{c.name}: {c.state}{c.restartCount > 0 ? ` (${c.restartCount} restarts)` : ''}"
+									class={cn(
+										'size-1.5 rounded-full',
+										c.ready
+											? 'bg-emerald-500'
+											: c.state === 'Waiting'
+												? 'bg-amber-500'
+												: c.state === 'Terminated'
+													? 'bg-blue-500'
+													: 'bg-red-500'
+									)}
+								></span>
+							{/each}
+						</div>
 					{:else if column.id === 'restarts'}
 						<div class="flex justify-center">
 							{#if pod.restarts > 0}
