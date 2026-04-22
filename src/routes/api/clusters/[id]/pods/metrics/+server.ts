@@ -6,11 +6,12 @@ import { authorize } from '$lib/server/services/authorize';
 
 export const GET: RequestHandler = async ({ params, url, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !await auth.can('clusters', 'read')) {
+
+	const clusterId = parseInt(params.id);
+	if (auth.authEnabled && !await auth.can('pods', 'read', clusterId)) {
 		return json({ error: 'Permission denied' }, { status: 403 });
 	}
 	try {
-		const clusterId = parseInt(params.id);
 		const namespace = url.searchParams.get('namespace') || undefined;
 
 		// Return empty metrics when metrics-server integration is disabled

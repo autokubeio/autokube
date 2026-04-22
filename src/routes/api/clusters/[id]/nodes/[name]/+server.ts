@@ -11,11 +11,11 @@ import { logAuditEvent } from '$lib/server/queries/audit';
  */
 export const PATCH: RequestHandler = async ({ params, request, cookies, getClientAddress }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !(await auth.can('clusters', 'update'))) {
-		return json({ error: 'Permission denied' }, { status: 403 });
-	}
 
 	const clusterId = parseInt(params.id);
+	if (auth.authEnabled && !(await auth.can('nodes', 'update', clusterId))) {
+		return json({ error: 'Permission denied' }, { status: 403 });
+	}
 	const nodeName = params.name;
 
 	if (isNaN(clusterId) || !nodeName) {
@@ -63,11 +63,11 @@ export const PATCH: RequestHandler = async ({ params, request, cookies, getClien
  */
 export const POST: RequestHandler = async ({ params, request, cookies, getClientAddress }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !(await auth.can('clusters', 'update'))) {
-		return json({ error: 'Permission denied' }, { status: 403 });
-	}
 
 	const clusterId = parseInt(params.id);
+	if (auth.authEnabled && !(await auth.can('nodes', 'update', clusterId))) {
+		return json({ error: 'Permission denied' }, { status: 403 });
+	}
 	const nodeName = params.name;
 
 	if (isNaN(clusterId) || !nodeName) {

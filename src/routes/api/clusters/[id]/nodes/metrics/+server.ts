@@ -10,11 +10,12 @@ import { authorize } from '$lib/server/services/authorize';
  */
 export const GET: RequestHandler = async ({ params, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !await auth.can('clusters', 'read')) {
+
+	const clusterId = parseInt(params.id);
+	if (auth.authEnabled && !await auth.can('nodes', 'read', clusterId)) {
 		return json({ error: 'Permission denied' }, { status: 403 });
 	}
 	try {
-		const clusterId = parseInt(params.id);
 
 		if (isNaN(clusterId)) {
 			return json({ error: 'Invalid cluster ID' }, { status: 400 });

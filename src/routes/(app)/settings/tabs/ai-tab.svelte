@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
@@ -203,8 +204,14 @@
 
 	// ── Lifecycle ────────────────────────────────────────────────────
 	onMount(load);
+
+	interface Props { canAccess?: boolean; }
+	let { canAccess = true }: Props = $props();
 </script>
 
+{#if !canAccess}
+<AccessRestricted message="You don't have permission to manage AI settings. Contact your administrator." />
+{:else}
 <!-- Header -->
 <div class="flex items-start justify-between">
 	<div>
@@ -454,5 +461,4 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
-
-
+{/if}

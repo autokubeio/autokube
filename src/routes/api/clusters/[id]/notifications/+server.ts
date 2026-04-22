@@ -15,7 +15,7 @@ import type { NotifGroups } from '$lib/notifications-constants';
  */
 export const GET: RequestHandler = async ({ params, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !(await auth.can('clusters', 'read'))) {
+	if (auth.authEnabled && !(await auth.can('notifications', 'read', clusterId))) {
 		return json({ error: 'Permission denied' }, { status: 403 });
 	}
 
@@ -34,7 +34,7 @@ export const GET: RequestHandler = async ({ params, cookies }) => {
  */
 export const PUT: RequestHandler = async ({ request, params, getClientAddress, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !(await auth.can('clusters', 'update'))) {
+	if (auth.authEnabled && !(await auth.can('notifications', 'update', clusterId))) {
 		return json({ error: 'Permission denied' }, { status: 403 });
 	}
 

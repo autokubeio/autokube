@@ -10,10 +10,11 @@ import { authorize } from '$lib/server/services/authorize';
  */
 export const DELETE: RequestHandler = async ({ params, url, cookies}) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !await auth.can('clusters', 'delete')) {
+
+	const clusterId = parseInt(params.id);
+	if (auth.authEnabled && !await auth.can('access_control', 'delete', clusterId)) {
 		return json({ error: 'Permission denied' }, { status: 403 });
 	}
-	const clusterId = parseInt(params.id);
 	const name = params.name;
 	const namespace = url.searchParams.get('namespace') || 'default';
 

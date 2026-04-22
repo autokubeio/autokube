@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
@@ -123,8 +124,14 @@
 			handleTestAllClusters();
 		}
 	});
+
+	interface Props { canAccess?: boolean; }
+	let { canAccess = true }: Props = $props();
 </script>
 
+{#if !canAccess}
+<AccessRestricted message="You don't have permission to manage cluster settings. Contact your administrator." />
+{:else}
 <!-- Header -->
 <div class="flex items-start justify-between">
 	<div>
@@ -313,3 +320,4 @@
 		clusterStore.addOrRefresh(id);
 	}}
 />
+{/if}

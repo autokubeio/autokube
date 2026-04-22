@@ -7,9 +7,9 @@ import {
 	type PermissionMap,
 	getSession,
 	findUser,
-	loadAuthConfig,
-	getSetting
+	loadAuthConfig
 } from '../queries';
+import { isPaidLicenseEnabled } from './license';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -149,14 +149,12 @@ async function isAuthEnabled(): Promise<boolean> {
 }
 
 /**
- * Check if enterprise license is active.
- * Reads 'enterprise_license_active' setting from database.
- * Future enhancement: Add license expiry date validation.
+ * Check if a paid license (Professional or Enterprise) is active.
+ * RBAC is only enforced when a paid license is active.
  */
 async function isEnterprise(): Promise<boolean> {
 	try {
-		const licenseActive = await getSetting('enterprise_license_active');
-		return licenseActive === true || licenseActive === 'true';
+		return await isPaidLicenseEnabled();
 	} catch {
 		return false;
 	}
@@ -169,6 +167,23 @@ async function isEnterprise(): Promise<boolean> {
  */
 function roleAppliesToCluster(roleClusterIds: number[] | null, clusterId: number): boolean {
 	return roleClusterIds === null || roleClusterIds.includes(clusterId);
+}
+
+/**
+ * Action aliases — API code uses REST-standard names (read/update), but the role
+ * dialog stores user-friendly names (view/edit). Matching either form lets both
+ * sides stay idiomatic without a DB migration.
+ */
+const ACTION_ALIASES: Record<string, string[]> = {
+	read: ['read', 'view', 'list'],
+	view: ['view', 'read', 'list'],
+	update: ['update', 'edit'],
+	edit: ['edit', 'update']
+};
+
+function actionMatches(granted: string[], action: string): boolean {
+	const accepted = ACTION_ALIASES[action] ?? [action];
+	return granted.some((a) => accepted.includes(a));
 }
 
 /**
@@ -192,9 +207,9 @@ async function checkPermission(
 			continue;
 		}
 
-		// Check if role has the required permission
+		// Check if role has the required permission (with action aliasing)
 		const permissions = assignment.role.permissions[resource];
-		if (permissions?.includes(action)) {
+		if (permissions && actionMatches(permissions, action)) {
 			return true;
 		}
 	}

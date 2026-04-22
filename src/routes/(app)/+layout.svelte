@@ -10,6 +10,7 @@
 	import AppSidebar from '$lib/components/app-sidebar.svelte';
 	import CommandPalette from '$lib/components/command-palette.svelte';
 	import ClusterStatusBar from '$lib/components/cluster-status-bar.svelte';
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
 	import { ModeWatcher, toggleMode } from 'mode-watcher';
 	import { Sun, Moon, Search, Brain } from 'lucide-svelte';
 	import AiClusterChat from '$lib/components/ai-cluster-chat.svelte';
@@ -60,6 +61,54 @@
 			selectCluster(allClusters[num - 1]);
 		}
 	}
+
+	// Route → required RBAC resource (settings page handled per-tab)
+	// Dashboard (/) is always accessible — it just shows clusters the user has access to.
+	const routePermissions: Record<string, string> = {
+		'/audit': 'audit_logs',
+		'/timeline': 'activity',
+		'/security-scans': 'image_scans',
+		'/pods': 'pods',
+		'/pod-distribution': 'pods',
+		'/resource-map': 'pods',
+		'/deployments': 'deployments',
+		'/daemonsets': 'deployments',
+		'/statefulsets': 'deployments',
+		'/replicasets': 'deployments',
+		'/hpas': 'deployments',
+		'/helm-releases': 'deployments',
+		'/jobs': 'jobs',
+		'/cronjobs': 'jobs',
+		'/services': 'services',
+		'/endpoints': 'services',
+		'/endpointslices': 'services',
+		'/ingress': 'ingress',
+		'/ingressclasses': 'ingress',
+		'/configmaps': 'config',
+		'/secrets': 'config',
+		'/resourcequotas': 'config',
+		'/limitranges': 'config',
+		'/networkpolicies': 'config',
+		'/persistentvolumes': 'volumes',
+		'/persistentvolumeclaims': 'volumes',
+		'/storageclasses': 'volumes',
+		'/nodes': 'nodes',
+		'/namespaces': 'namespaces',
+		'/events': 'events',
+		'/roles': 'access_control',
+		'/rolebindings': 'access_control',
+		'/clusterroles': 'access_control',
+		'/clusterrolebindings': 'access_control',
+		'/serviceaccounts': 'access_control',
+		'/custom-resources': 'custom_resources'
+	};
+
+	const canAccess = $derived(() => {
+		const perm = routePermissions[page.url.pathname];
+		if (!perm) return true; // no restriction defined — always allow
+		if (!data.permissions) return true; // auth disabled or no license — allow all
+		return data.permissions[perm] ?? true;
+	});
 
 	let commandPalette: ReturnType<typeof CommandPalette>;
 	let showAiChat = $state(false);
@@ -196,7 +245,11 @@
 			<ClusterStatusBar {cluster} {allClusters} onSelectCluster={selectCluster} />
 		{/if}
 		<div class="flex flex-1 flex-col gap-4 overflow-auto p-4">
-			{@render children()}
+			{#if canAccess()}
+				{@render children()}
+			{:else}
+				<AccessRestricted />
+			{/if}
 		</div>
 	</SidebarInset>
 </SidebarProvider>

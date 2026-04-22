@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Switch } from '$lib/components/ui/switch';
@@ -98,8 +99,14 @@
 			scanSaving = false;
 		}
 	}
+
+	interface Props { canAccess?: boolean; }
+	let { canAccess = true }: Props = $props();
 </script>
 
+{#if !canAccess}
+<AccessRestricted message="You don't have permission to manage general settings. Contact your administrator." />
+{:else}
 <div class="space-y-6">
 	<!-- Appearance -->
 	<Card.Root>
@@ -474,3 +481,4 @@
 		</Card.Content>
 	</Card.Root>
 </div>
+{/if}

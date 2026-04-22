@@ -56,11 +56,11 @@ async function waitForNextPoll(signal: AbortSignal): Promise<void> {
  */
 export const GET: RequestHandler = async ({ params, url, cookies, request }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !(await auth.can('clusters', 'read'))) {
-		return new Response('Permission denied', { status: 403 });
-	}
 
 	const clusterId = parseInt(params.id);
+	if (auth.authEnabled && !(await auth.can('pods', 'read', clusterId))) {
+		return new Response('Permission denied', { status: 403 });
+	}
 	if (isNaN(clusterId)) {
 		return new Response('Invalid cluster ID', { status: 400 });
 	}

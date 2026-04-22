@@ -75,11 +75,11 @@ interface K8sCronJob {
  */
 export const GET: RequestHandler = async ({ params, url, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !(await auth.can('clusters', 'read'))) {
-		return json({ error: 'Permission denied' }, { status: 403 });
-	}
 
 	const clusterId = parseInt(params.id);
+	if (auth.authEnabled && !(await auth.can('pods', 'read', clusterId))) {
+		return json({ error: 'Permission denied' }, { status: 403 });
+	}
 	const namespace = url.searchParams.get('namespace') || 'all';
 
 	if (isNaN(clusterId)) {

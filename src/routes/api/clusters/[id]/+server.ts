@@ -14,17 +14,19 @@ function safeCluster(c: NonNullable<Awaited<ReturnType<typeof findCluster>>>) {
 
 export const GET: RequestHandler = async ({ params, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !await auth.can('clusters', 'read')) {
-		return json({ error: 'Permission denied' }, { status: 403 });
+	const clusterId = Number(params.id);
+	if (auth.authEnabled && !(await auth.canAccessCluster(clusterId))) {
+		return json({ error: 'Cluster access denied' }, { status: 403 });
 	}
-	const cluster = await findCluster(Number(params.id));
+	const cluster = await findCluster(clusterId);
 	if (!cluster) return json({ error: 'Cluster not found' }, { status: 404 });
 	return json(safeCluster(cluster));
 };
 
 export const PATCH: RequestHandler = async ({ request, params, getClientAddress, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !await auth.can('clusters', 'update')) {
+	const clusterId = Number(params.id);
+	if (auth.authEnabled && !(await auth.can('clusters', 'update', clusterId))) {
 		return json({ error: 'Permission denied' }, { status: 403 });
 	}
 	try {
@@ -119,7 +121,8 @@ export const PATCH: RequestHandler = async ({ request, params, getClientAddress,
 
 export const DELETE: RequestHandler = async ({ request, params, getClientAddress, cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !await auth.can('clusters', 'delete')) {
+	const clusterId = Number(params.id);
+	if (auth.authEnabled && !(await auth.can('clusters', 'delete', clusterId))) {
 		return json({ error: 'Permission denied' }, { status: 403 });
 	}
 	try {

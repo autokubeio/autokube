@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Popover from '$lib/components/ui/popover';
@@ -395,8 +396,14 @@
 			console.error('[Notifications] Toggle alert rule error:', err);
 		}
 	}
+
+	interface Props { canAccess?: boolean; }
+	let { canAccess = true }: Props = $props();
 </script>
 
+{#if !canAccess}
+<AccessRestricted message="You don't have permission to manage notification settings. Contact your administrator." />
+{:else}
 <!-- Header -->
 <div class="flex items-start justify-between">
 	<div>
@@ -862,3 +869,4 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+{/if}

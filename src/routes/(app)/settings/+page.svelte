@@ -13,6 +13,8 @@
 	import DangerZoneTab from './tabs/danger-zone-tab.svelte';
 	import AiTab from './tabs/ai-tab.svelte';
 
+	let { data } = $props();
+
 	const settingsTabs = [
 		{ value: 'general', label: 'General' },
 		{ value: 'authentication', label: 'Authentication' },
@@ -75,19 +77,19 @@
 		</Tabs.List>
 
 		<Tabs.Content value="general" class="mt-3">
-			<GeneralTab />
+			<GeneralTab canAccess={data.canManageGeneral} />
 		</Tabs.Content>
 
 		<Tabs.Content value="authentication" class="mt-3">
-			<AuthenticationTab />
+			<AuthenticationTab canAccess={data.canManageAuth} />
 		</Tabs.Content>
 
 		<Tabs.Content value="ssh-keys" class="mt-3">
-			<SshKeysTab />
+			<SshKeysTab canAccess={data.canManageSshKeys} />
 		</Tabs.Content>
 
 		<Tabs.Content value="cluster" class="mt-3">
-			<ClustersTab />
+			<ClustersTab canAccess={data.canManageClusters} />
 		</Tabs.Content>
 
 		<Tabs.Content value="about" class="mt-3">
@@ -95,19 +97,19 @@
 		</Tabs.Content>
 
 		<Tabs.Content value="notifications" class="mt-3">
-			<NotificationsTab />
+			<NotificationsTab canAccess={data.canManageNotifications} />
 		</Tabs.Content>
 
 		<Tabs.Content value="ai" class="mt-3">
-			<AiTab />
+			<AiTab canAccess={data.canManageAi} />
 		</Tabs.Content>
 
 		<Tabs.Content value="license" class="mt-3">
-			<LicenseTab />
+			<LicenseTab canAccess={data.canManageLicense} />
 		</Tabs.Content>
 
 		<Tabs.Content value="danger-zone" class="mt-3">
-			<DangerZoneTab />
+			<DangerZoneTab canAccess={data.canManageDangerZone} />
 		</Tabs.Content>
 
 		<!-- Placeholder tabs -->

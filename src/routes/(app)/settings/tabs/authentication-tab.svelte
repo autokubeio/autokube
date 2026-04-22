@@ -44,7 +44,13 @@
 	import MfaDisableDialog from '$lib/components/mfa-disable-dialog.svelte';
 	import MfaSetupDialog from '$lib/components/mfa-setup-dialog.svelte';
 	import EnterpriseFeatureLock from '$lib/components/enterprise-feature-lock.svelte';
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
 	import { goto } from '$app/navigation';
+
+	interface Props {
+		canAccess?: boolean;
+	}
+	let { canAccess = true }: Props = $props();
 	import { authSettingsStore } from '$lib/stores/auth-settings.svelte';
 	import { usersStore } from '$lib/stores/users.svelte';
 	import { rolesStore } from '$lib/stores/roles.svelte';
@@ -464,6 +470,7 @@
 		name: string;
 		description: string;
 		permissions: PermissionMap;
+		clusterIds: number[] | null;
 	}) {
 		if (editingRole) {
 			await roles.updateRole(editingRole.id, data);
@@ -518,6 +525,9 @@
 	}
 </script>
 
+{#if !canAccess}
+<AccessRestricted message="You don't have permission to manage authentication settings. Contact your administrator." />
+{:else}
 <!-- Authentication toggle -->
 <div class="flex items-center justify-between gap-4 rounded-lg border bg-card px-4 py-4">
 	<div class="flex items-center gap-3">
@@ -946,6 +956,12 @@
 										<span>•</span>
 									{/if}
 									<span>{totalPerms} permissions</span>
+									<span>•</span>
+									{#if role.clusterIds === null}
+										<span>All clusters</span>
+									{:else}
+										<span>{role.clusterIds.length} cluster{role.clusterIds.length !== 1 ? 's' : ''}</span>
+									{/if}
 								</div>
 							</div>
 
@@ -1268,6 +1284,7 @@
 
 
 </Tabs.Root>
+{/if}
 
 <!-- MFA Self-Service Dialogs -->
 <MfaSetupDialog

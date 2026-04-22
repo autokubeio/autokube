@@ -27,6 +27,12 @@
 		Loader2
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
+
+	interface Props {
+		canAccess?: boolean;
+	}
+	let { canAccess = true }: Props = $props();
 
 	// ── State ──────────────────────────────────────────────────────────────
 	interface LicenseStatus {
@@ -151,7 +157,9 @@
 	}
 </script>
 
-{#if loading}
+{#if !canAccess}
+<AccessRestricted message="You don't have permission to manage license settings. Contact your administrator." />
+{:else if loading}
 	<div class="flex items-center justify-center py-12">
 		<Loader2 class="size-4 animate-spin text-muted-foreground" />
 	</div>

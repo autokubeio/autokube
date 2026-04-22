@@ -19,12 +19,20 @@ function safeCluster(c: Awaited<ReturnType<typeof insertCluster>>) {
 
 export const GET: RequestHandler = async ({ cookies }) => {
 	const auth = await authorize(cookies);
-	if (auth.authEnabled && !await auth.can('clusters', 'read')) {
-		return json({ error: 'Permission denied' }, { status: 403 });
+
+	// Require authentication, but don't require `clusters:read` — any authenticated
+	// user can see the clusters their roles scope them to (otherwise they can't
+	// navigate to anything). Settings > Clusters tab still gates management UI.
+	if (auth.authEnabled && !auth.isAuthenticated) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
+
 	try {
 		const rows = await listClusters();
-		return json({ clusters: rows.map(safeCluster), total: rows.length });
+		const accessibleIds = await auth.getAccessibleClusterIds();
+		const filtered =
+			accessibleIds === null ? rows : rows.filter((c) => accessibleIds.includes(c.id));
+		return json({ clusters: filtered.map(safeCluster), total: filtered.length });
 	} catch (err) {
 		console.error('[API] Failed to list clusters:', err);
 		return json({ error: 'Failed to list clusters' }, { status: 500 });

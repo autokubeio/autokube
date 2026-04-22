@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AccessRestricted from '$lib/components/access-restricted.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		AlertDialog,
@@ -70,8 +71,14 @@
 			clearingData = false;
 		}
 	}
+
+	interface Props { canAccess?: boolean; }
+	let { canAccess = true }: Props = $props();
 </script>
 
+{#if !canAccess}
+<AccessRestricted message="You don't have permission to manage danger zone settings. Contact your administrator." />
+{:else}
 <div class="space-y-6">
 	<div
 		class="flex items-center gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/10 px-4 py-3"
@@ -237,3 +244,4 @@
 		</div>
 	</div>
 </div>
+{/if}

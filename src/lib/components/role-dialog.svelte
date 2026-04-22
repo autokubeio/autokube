@@ -24,6 +24,7 @@
 			name: string;
 			description: string;
 			permissions: PermissionMap;
+			clusterIds: number[] | null;
 		}) => Promise<void>;
 	}
 
@@ -34,6 +35,8 @@
 	let systemPerms = $state<Map<string, Set<string>>>(new Map());
 	let clusterPerms = $state<Map<string, Set<string>>>(new Map());
 	let saving = $state(false);
+	let clusters = $state<{ id: number; name: string }[]>([]);
+	let clusterIds = $state<number[] | null>(null);
 
 	const isEditMode = $derived(!!role);
 	const isValid = $derived(name.trim().length > 0);
@@ -283,6 +286,7 @@
 		if (open) {
 			name = role?.name ?? '';
 			description = role?.description ?? '';
+			clusterIds = role?.clusterIds ?? null;
 			if (role?.permissions) {
 				const { system, cluster } = buildSetsFromPermissions(role.permissions);
 				systemPerms = system;
@@ -291,6 +295,10 @@
 				systemPerms = new Map(SYSTEM_PERMISSION_GROUPS.map((g) => [g.resource, new Set()]));
 				clusterPerms = new Map(CLUSTER_PERMISSION_GROUPS.map((g) => [g.resource, new Set()]));
 			}
+			fetch('/api/clusters')
+				.then((r) => r.json())
+				.then((data) => { clusters = data.clusters ?? []; })
+				.catch(() => { clusters = []; });
 		}
 	});
 
@@ -310,13 +318,59 @@
 		clusterPerms = new Map(clusterPerms);
 	}
 
+	function selectAllSys() {
+		for (const g of SYSTEM_PERMISSION_GROUPS)
+			systemPerms.set(g.resource, new Set(g.perms.map((p) => p.id)));
+		systemPerms = new Map(systemPerms);
+	}
+	function deselectAllSys() {
+		for (const g of SYSTEM_PERMISSION_GROUPS) systemPerms.set(g.resource, new Set());
+		systemPerms = new Map(systemPerms);
+	}
+	function selectAllCls() {
+		for (const g of CLUSTER_PERMISSION_GROUPS)
+			clusterPerms.set(g.resource, new Set(g.perms.map((p) => p.id)));
+		clusterPerms = new Map(clusterPerms);
+	}
+	function deselectAllCls() {
+		for (const g of CLUSTER_PERMISSION_GROUPS) clusterPerms.set(g.resource, new Set());
+		clusterPerms = new Map(clusterPerms);
+	}
+	function toggleGroupSys(resource: string, perms: { id: string }[]) {
+		const cur = systemPerms.get(resource) ?? new Set();
+		const allOn = perms.every((p) => cur.has(p.id));
+		systemPerms.set(resource, allOn ? new Set() : new Set(perms.map((p) => p.id)));
+		systemPerms = new Map(systemPerms);
+	}
+	function toggleGroupCls(resource: string, perms: { id: string }[]) {
+		const cur = clusterPerms.get(resource) ?? new Set();
+		const allOn = perms.every((p) => cur.has(p.id));
+		clusterPerms.set(resource, allOn ? new Set() : new Set(perms.map((p) => p.id)));
+		clusterPerms = new Map(clusterPerms);
+	}
+
+	function toggleAllClusters(checked: boolean) {
+		clusterIds = checked ? null : clusters.map((c) => c.id);
+	}
+
+	function toggleCluster(id: number) {
+		if (clusterIds === null) return;
+		if (clusterIds.includes(id)) {
+			const next = clusterIds.filter((c) => c !== id);
+			clusterIds = next.length === 0 ? null : next;
+		} else {
+			clusterIds = [...clusterIds, id];
+		}
+	}
+
 	async function handleSave() {
 		saving = true;
 		try {
 			await onSave({
 				name: name.trim(),
 				description: description.trim(),
-				permissions: buildPermissionsFromSets(systemPerms, clusterPerms)
+				permissions: buildPermissionsFromSets(systemPerms, clusterPerms),
+				clusterIds
 			});
 			onClose();
 		} catch (err) {
@@ -355,6 +409,41 @@
 				</div>
 			</div>
 
+			<!-- Cluster Scope -->
+			<div class="space-y-1.5">
+				<div>
+					<Label class="text-xs">Cluster Scope</Label>
+					<p class="mt-0.5 text-xs text-muted-foreground">Which clusters this role's permissions apply to.</p>
+				</div>
+				<div class="rounded-lg border bg-muted/20 p-3">
+					<label class="flex cursor-pointer items-center gap-2">
+						<Checkbox
+							checked={clusterIds === null}
+							onCheckedChange={(v) => toggleAllClusters(!!v)}
+							class="size-3.5"
+							disabled={saving}
+						/>
+						<span class="text-xs font-medium">All clusters</span>
+					</label>
+					{#if clusterIds !== null && clusters.length > 0}
+						<div class="mt-2 space-y-2 border-t pt-2">
+							{#each clusters as cluster (cluster.id)}
+								<label class="flex cursor-pointer items-center gap-2">
+									<Checkbox
+										checked={clusterIds.includes(cluster.id)}
+										onCheckedChange={() => toggleCluster(cluster.id)}
+										class="size-3.5"
+										disabled={saving}
+									/>
+									<Server class="size-3 shrink-0 text-muted-foreground" />
+									<span class="text-xs">{cluster.name}</span>
+								</label>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			</div>
+
 			<Separator />
 
 			<Tabs value="system">
@@ -374,11 +463,33 @@
 				</TabsList>
 
 				<TabsContent value="system" class="mt-3 space-y-3">
+					<div class="flex items-center justify-end gap-3">
+						<button
+							type="button"
+							class="text-[11px] text-primary hover:underline disabled:opacity-40"
+							onclick={selectAllSys}
+							disabled={saving}
+						>Select all</button>
+						<span class="text-[11px] text-muted-foreground/40">·</span>
+						<button
+							type="button"
+							class="text-[11px] text-muted-foreground hover:text-foreground hover:underline disabled:opacity-40"
+							onclick={deselectAllSys}
+							disabled={saving}
+						>Deselect all</button>
+					</div>
 					{#each SYSTEM_PERMISSION_GROUPS as group (group.resource)}
+						{@const groupAllOn = group.perms.every((p) => systemPerms.get(group.resource)?.has(p.id))}
 						<div class="rounded-lg border bg-muted/20 p-3">
 							<div class="mb-2.5 flex items-center gap-1.5">
 								<group.icon class="size-3 text-muted-foreground" />
 								<span class="text-xs font-medium">{group.label}</span>
+								<button
+									type="button"
+									class="ml-auto text-[10px] text-primary hover:underline disabled:opacity-40"
+									onclick={() => toggleGroupSys(group.resource, group.perms)}
+									disabled={saving}
+								>{groupAllOn ? 'Deselect all' : 'Select all'}</button>
 							</div>
 							<div class="grid grid-cols-2 gap-2">
 								{#each group.perms as p (p.id)}
@@ -402,11 +513,33 @@
 				</TabsContent>
 
 				<TabsContent value="cluster" class="mt-3 space-y-3">
+					<div class="flex items-center justify-end gap-3">
+						<button
+							type="button"
+							class="text-[11px] text-primary hover:underline disabled:opacity-40"
+							onclick={selectAllCls}
+							disabled={saving}
+						>Select all</button>
+						<span class="text-[11px] text-muted-foreground/40">·</span>
+						<button
+							type="button"
+							class="text-[11px] text-muted-foreground hover:text-foreground hover:underline disabled:opacity-40"
+							onclick={deselectAllCls}
+							disabled={saving}
+						>Deselect all</button>
+					</div>
 					{#each CLUSTER_PERMISSION_GROUPS as group (group.resource)}
+						{@const groupAllOn = group.perms.every((p) => clusterPerms.get(group.resource)?.has(p.id))}
 						<div class="rounded-lg border bg-muted/20 p-3">
 							<div class="mb-2.5 flex items-center gap-1.5">
 								<group.icon class="size-3 text-muted-foreground" />
 								<span class="text-xs font-medium">{group.label}</span>
+								<button
+									type="button"
+									class="ml-auto text-[10px] text-primary hover:underline disabled:opacity-40"
+									onclick={() => toggleGroupCls(group.resource, group.perms)}
+									disabled={saving}
+								>{groupAllOn ? 'Deselect all' : 'Select all'}</button>
 							</div>
 							<div class="grid grid-cols-2 gap-2">
 								{#each group.perms as p (p.id)}
