@@ -3,12 +3,17 @@ import type { RequestHandler } from './$types';
 import { listOidcProviders, insertOidcProvider, type ResolvedOidc } from '$lib/server/queries/oidc';
 import { logAuditEvent } from '$lib/server/queries/audit';
 import { authorize } from '$lib/server/services/authorize';
+import { isEnterpriseEnabled } from '$lib/server/services/license';
 
 function safeOidc(p: ResolvedOidc) {
 	return { ...p, clientSecret: p.clientSecret ? '••••••••' : '' };
 }
 
+const licenseRequired = () =>
+	json({ error: 'Business License required', upgrade: 'https://autokube.io/pricing' }, { status: 402 });
+
 export const GET: RequestHandler = async ({ cookies }) => {
+	if (!(await isEnterpriseEnabled())) return licenseRequired();
 	const auth = await authorize(cookies);
 	if (auth.authEnabled && !(await auth.can('settings', 'read'))) {
 		return json({ error: 'Permission denied' }, { status: 403 });
@@ -22,6 +27,7 @@ export const GET: RequestHandler = async ({ cookies }) => {
 };
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
+	if (!(await isEnterpriseEnabled())) return licenseRequired();
 	const auth = await authorize(cookies);
 	if (auth.authEnabled && !(await auth.can('settings', 'update'))) {
 		return json({ error: 'Permission denied' }, { status: 403 });

@@ -5,8 +5,13 @@ import { db, eq } from '$lib/server/db';
 import { userRoles } from '$lib/server/db/schema';
 import { logAuditEvent } from '$lib/server/queries/audit';
 import { authorize } from '$lib/server/services/authorize';
+import { isPaidLicenseEnabled } from '$lib/server/services/license';
+
+const licenseRequired = () =>
+	json({ error: 'Business License required', upgrade: 'https://autokube.io/pricing' }, { status: 402 });
 
 export const PATCH: RequestHandler = async ({ request, params, getClientAddress, cookies}) => {
+	if (!(await isPaidLicenseEnabled())) return licenseRequired();
 	const auth = await authorize(cookies);
 	if (auth.authEnabled && !await auth.can('settings', 'update')) {
 		return json({ error: 'Permission denied' }, { status: 403 });
@@ -53,6 +58,7 @@ export const PATCH: RequestHandler = async ({ request, params, getClientAddress,
 };
 
 export const DELETE: RequestHandler = async ({ request, params, getClientAddress, cookies}) => {
+	if (!(await isPaidLicenseEnabled())) return licenseRequired();
 	const auth = await authorize(cookies);
 	if (auth.authEnabled && !await auth.can('settings', 'delete')) {
 		return json({ error: 'Permission denied' }, { status: 403 });

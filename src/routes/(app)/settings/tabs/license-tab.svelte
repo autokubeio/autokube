@@ -345,6 +345,25 @@
 		</div>
 	</div>
 {:else}
+	<!-- Upgrade Banner -->
+	<div class="rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+		<div class="flex-1 min-w-0">
+			<p class="text-sm font-semibold text-foreground">Unlock enterprise features</p>
+			<p class="text-xs text-muted-foreground mt-0.5">
+				Get SSO / LDAP, custom roles, audit log export, and priority support with a Business License.
+			</p>
+		</div>
+		<a
+			href="https://autokube.io/pricing"
+			target="_blank"
+			rel="noopener noreferrer"
+			class="inline-flex items-center gap-1.5 shrink-0 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+		>
+			<Shield class="size-3" />
+			Get Business License
+		</a>
+	</div>
+
 	<!-- Activation Form (No License State) -->
 	<!-- System Information -->
 	<div>

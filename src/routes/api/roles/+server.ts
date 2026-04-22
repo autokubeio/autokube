@@ -5,6 +5,7 @@ import { db } from '$lib/server/db';
 import { userRoles } from '$lib/server/db/schema';
 import { logAuditEvent } from '$lib/server/queries/audit';
 import { authorize } from '$lib/server/services/authorize';
+import { isPaidLicenseEnabled } from '$lib/server/services/license';
 
 async function getRolesWithUserCount() {
 	const allRoles = await listRoles();
@@ -35,6 +36,9 @@ export const GET: RequestHandler = async ({ cookies }) => {
 };
 
 export const POST: RequestHandler = async ({ request, getClientAddress, cookies}) => {
+	if (!(await isPaidLicenseEnabled())) {
+		return json({ error: 'Business License required', upgrade: 'https://autokube.io/pricing' }, { status: 402 });
+	}
 	const auth = await authorize(cookies);
 	if (auth.authEnabled && !await auth.can('settings', 'create')) {
 		return json({ error: 'Permission denied' }, { status: 403 });

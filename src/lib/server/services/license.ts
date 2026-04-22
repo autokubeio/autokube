@@ -226,6 +226,15 @@ export async function isEnterpriseEnabled(): Promise<boolean> {
 }
 
 /**
+ * Check if any paid license is active (Professional or Enterprise).
+ * Use this to gate Business License features (SSO, custom roles, audit logs).
+ */
+export async function isPaidLicenseEnabled(): Promise<boolean> {
+	const type = await getLicenseType();
+	return type === 'professional' || type === 'enterprise';
+}
+
+/**
  * Get the current license type if a valid license is active.
  */
 export async function getLicenseType(): Promise<LicenseType | null> {

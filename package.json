@@ -1,5 +1,6 @@
 {
 	"name": "autokube",
+	"description": "Self-hosted Kubernetes dashboard with AI assistant, web terminal, private cluster agent, RBAC, and security scanning. Open source.",
 	"private": true,
 	"version": "1.0.0",
 	"type": "module",

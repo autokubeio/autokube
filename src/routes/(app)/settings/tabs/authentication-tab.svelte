@@ -71,6 +71,7 @@
 	let roleDialogOpen = $state(false);
 	let editingRole = $state<ResolvedRole | null>(null);
 	let hasValidLicense = $state(false);
+	let hasEnterpriseLicense = $state(false);
 	let licenseChecked = $state(false);
 	let authSubTab = $state('users');
 
@@ -184,12 +185,13 @@
 			hasValidLicense =
 				data.active &&
 				(data.payload?.type === 'professional' || data.payload?.type === 'enterprise');
+			hasEnterpriseLicense = data.active && data.payload?.type === 'enterprise';
 		} catch {
 			hasValidLicense = false;
 		} finally {
 			licenseChecked = true;
 		}
-		if (hasValidLicense) loadSsoProviders();
+		if (hasEnterpriseLicense) loadSsoProviders();
 		fetchMfaStatus();
 	});
 
@@ -1008,7 +1010,7 @@
 					class="h-5 gap-0.5 rounded-md border-0 bg-linear-to-r from-amber-400 to-yellow-500 px-1.5 text-[10px] font-bold text-black shadow-sm"
 				>
 					<Sparkles class="size-3" />
-					Pro
+					Enterprise
 				</Badge>
 				<h2 class="text-lg font-semibold">SSO / Enterprise Auth</h2>
 			</div>
@@ -1021,7 +1023,7 @@
 			<div class="mt-4">
 				<Skeleton class="h-32 w-full rounded-lg" />
 			</div>
-		{:else if !hasValidLicense}
+		{:else if !hasEnterpriseLicense}
 			<div class="mt-4">
 				<EnterpriseFeatureLock
 					inline

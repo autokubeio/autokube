@@ -28,8 +28,8 @@
 		featureColumns = 2,
 		inline = false,
 		containerless = false,
-		ctaLabel = 'Activate License',
-		ctaHref = '/settings#license'
+		ctaLabel = 'Get Business License',
+		ctaHref = 'https://autokube.io/pricing'
 	}: Props = $props();
 
 	const bodyText = $derived.by(() => {

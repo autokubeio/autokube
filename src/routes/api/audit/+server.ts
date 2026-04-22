@@ -2,8 +2,12 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getAuditLogs, getAuditLogUsers } from '$lib/server/queries/audit';
 import { authorize } from '$lib/server/services/authorize';
+import { isEnterpriseEnabled } from '$lib/server/services/license';
 
 export const GET: RequestHandler = async ({ url, cookies}) => {
+	if (!(await isEnterpriseEnabled())) {
+		return json({ error: 'Business License required', upgrade: 'https://autokube.io/pricing' }, { status: 402 });
+	}
 	const auth = await authorize(cookies);
 	if (auth.authEnabled && !await auth.can('audit_logs', 'view')) {
 		return json({ error: 'Permission denied' }, { status: 403 });
