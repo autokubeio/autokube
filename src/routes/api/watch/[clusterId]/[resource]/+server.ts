@@ -499,6 +499,21 @@ export const GET: RequestHandler = async ({ params, url, request, cookies }) => 
 					if (isAbort) {
 						// Normal client disconnect — exit loop silently
 						break;
+					} else if (code === 'NOT_FOUND') {
+						// Resource type does not exist on this cluster (e.g. CRD not installed).
+						// No point retrying — tell the client and exit so the page can show
+						// its "API not installed" empty state without a reconnect spam loop.
+						console.warn(
+							`[SSE] Resource not found for ${resource} (cluster ${clusterLabel}): ${msg}`
+						);
+						send({ type: 'ERROR', code: 'NOT_FOUND', error: msg });
+						break;
+					} else if (code === 'UNAUTHORIZED') {
+						// 401/403 — caller lacks permission to watch this resource.
+						// Won't self-heal without RBAC change; stop reconnecting.
+						console.warn(`[SSE] Unauthorized for ${resource} (cluster ${clusterLabel}): ${msg}`);
+						send({ type: 'ERROR', code: 'UNAUTHORIZED', error: msg });
+						break;
 					} else if (isConfigError) {
 						// Permanent config error — tell client to stop retrying, then exit
 						console.warn(`[SSE] Config error for ${resource} (cluster ${clusterLabel}): ${msg}`);
