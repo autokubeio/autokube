@@ -143,18 +143,6 @@ jobs:
           fi
 
           {
-            echo "${VERSION} — <!-- TODO: headline -->"
-            echo ""
-            echo "<!-- TODO: 1-2 sentence intro describing the theme of this release -->"
-            echo ""
-            echo "## ✨ Highlights"
-            echo ""
-            echo "<!-- TODO: Group the major themes from the changelog below into bold-titled sections -->"
-            echo ""
-            echo "## 🔧 Upgrade notes"
-            echo ""
-            echo "<!-- TODO: Migration steps, breaking changes, backwards-compat notes. Delete this section if there's nothing to flag. -->"
-            echo ""
             echo "## 📝 Full changelog"
             echo ""
             echo "${CHANGELOG}"
