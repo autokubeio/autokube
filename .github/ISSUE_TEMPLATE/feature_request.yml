@@ -1,0 +1,94 @@
+name: Feature request
+description: Propose a new feature or enhancement for AutoKube.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature. Please fill out the sections below so we can evaluate it consistently.
+        If you opt into **agent-assisted mode** at the bottom, a Claude Code workflow will run the local agents
+        in `~/.claude/agents` (Analyst → Researcher → Planner → Designer → Coder → code-reviewer, coordinated by
+        Orchestrator) against this issue.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What user problem, gap, or friction does this address? Link any existing issues, Slack threads, or support tickets.
+      placeholder: Today, operators managing multiple clusters have to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the feature from a user's perspective. Screenshots, mockups, or flow sketches welcome.
+      placeholder: Add a "..." view under Clusters that lets the user ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope & non-goals
+      description: What is explicitly in scope for a first version? What is explicitly out of scope?
+      placeholder: |
+        In scope:
+          - ...
+        Out of scope:
+          - ...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of AutoKube does this touch?
+      multiple: true
+      options:
+        - UI / SvelteKit routes
+        - Kubernetes services (src/lib/server/services/kubernetes)
+        - Real-time / SSE watches
+        - AI service
+        - Background services (notifications, metrics, scans)
+        - RBAC / auth
+        - Database schema / migrations
+        - Agent (in-cluster reverse proxy)
+        - DevOps / Docker / CI
+        - Docs
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete, testable statements. Use EARS / Given-When-Then if useful.
+      placeholder: |
+        - Given a user with role X, when they open Y, they see ...
+        - The feature works for both kubeconfig and agent `authType` cluster connections.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why they were rejected.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is an enhancement, not a bug. (Bugs go in the bug report template.)
+          required: true
+
