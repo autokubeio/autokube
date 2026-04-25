@@ -31,6 +31,55 @@ interface ListResponse {
 	items?: any[];
 }
 
+/**
+ * Drain the rest of an HTTP response body and resolve with it as a string.
+ * Used to read the K8s `Status` payload returned for non-2xx responses.
+ */
+function drainResponse(res: import('node:http').IncomingMessage): Promise<string> {
+	return new Promise((resolve) => {
+		const chunks: Buffer[] = [];
+		res.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+		res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+		res.on('error', () => resolve(Buffer.concat(chunks).toString('utf8')));
+	});
+}
+
+/**
+ * Map an HTTP status from a watch response to a stable error code that the
+ * SSE wrapper can use to decide whether to retry or give up.
+ */
+function watchErrorCodeForStatus(status: number): string {
+	if (status === 404) return 'NOT_FOUND';
+	if (status === 401 || status === 403) return 'UNAUTHORIZED';
+	if (status >= 500) return 'SERVER_ERROR';
+	return `HTTP_${status}`;
+}
+
+/**
+ * Build a rejected error from a non-2xx watch response. Reads the K8s
+ * `Status` object out of the body so we can include the API-server message
+ * (e.g. "the server could not find the requested resource") alongside our
+ * own code.
+ */
+async function buildHttpError(
+	res: import('node:http').IncomingMessage
+): Promise<NodeJS.ErrnoException> {
+	const status = res.statusCode ?? 0;
+	const body = await drainResponse(res);
+
+	let message = `HTTP ${status}`;
+	try {
+		const parsed = JSON.parse(body) as { message?: string };
+		if (parsed?.message) message = parsed.message;
+	} catch {
+		// Not JSON — keep the generic HTTP message.
+	}
+
+	const err = new Error(message) as NodeJS.ErrnoException;
+	err.code = watchErrorCodeForStatus(status);
+	return err;
+}
+
 interface SnapshotEntry {
 	object: any;
 	version: string;
@@ -39,7 +88,14 @@ interface SnapshotEntry {
 const AGENT_WATCH_POLL_INTERVAL = 3000;
 
 // Re-export resource path utilities for convenience
-export { buildWatchPath, getWatchPath, buildApiPath, buildListApiPath, getResourceConfig, RESOURCE_CONFIGS } from './resource-paths';
+export {
+	buildWatchPath,
+	getWatchPath,
+	buildApiPath,
+	buildListApiPath,
+	getResourceConfig,
+	RESOURCE_CONFIGS
+} from './resource-paths';
 
 function stripWatchParams(resourcePath: string): string {
 	const url = new URL(resourcePath, 'https://autokube.local');
@@ -211,6 +267,12 @@ export async function watchResource(
 
 		return new Promise((resolve, reject) => {
 			const req = https.request(options, (res) => {
+				const status = res.statusCode ?? 0;
+				if (status < 200 || status >= 300) {
+					buildHttpError(res).then(reject, reject);
+					return;
+				}
+
 				let buffer = '';
 
 				res.on('data', (chunk) => {
@@ -235,7 +297,13 @@ export async function watchResource(
 				});
 
 				res.on('error', (err: any) => {
-					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
+					const silent = [
+						'ECONNRESET',
+						'ECONNREFUSED',
+						'ETIMEDOUT',
+						'ENOTFOUND',
+						'FailedToOpenSocket'
+					];
 					if (!silent.includes(err?.code)) {
 						console.error('[Watch Resource] Response error:', err);
 					}
@@ -244,7 +312,13 @@ export async function watchResource(
 			});
 
 			req.on('error', (err: any) => {
-				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
+				const silent = [
+					'ECONNRESET',
+					'ECONNREFUSED',
+					'ETIMEDOUT',
+					'ENOTFOUND',
+					'FailedToOpenSocket'
+				];
 				if (!silent.includes(err?.code)) {
 					console.error('[Watch Resource] Request error:', err);
 				}
@@ -304,8 +378,7 @@ export async function watchResourceByCluster(
 		const url = `${config.server}${resourcePath}`;
 		const urlObj = new URL(url);
 
-		const skipTLS =
-			config.skipTLSVerify || process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0';
+		const skipTLS = config.skipTLSVerify || process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0';
 
 		const options: https.RequestOptions = {
 			hostname: urlObj.hostname,
@@ -336,6 +409,12 @@ export async function watchResourceByCluster(
 
 		return new Promise((resolve, reject) => {
 			const req = https.request(options, (res) => {
+				const status = res.statusCode ?? 0;
+				if (status < 200 || status >= 300) {
+					buildHttpError(res).then(reject, reject);
+					return;
+				}
+
 				let buffer = '';
 
 				res.on('data', (chunk) => {
@@ -360,7 +439,13 @@ export async function watchResourceByCluster(
 				});
 
 				res.on('error', (err: any) => {
-					const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
+					const silent = [
+						'ECONNRESET',
+						'ECONNREFUSED',
+						'ETIMEDOUT',
+						'ENOTFOUND',
+						'FailedToOpenSocket'
+					];
 					if (!silent.includes(err?.code)) {
 						console.error('[Watch Resource] Response error:', err);
 					}
@@ -369,7 +454,13 @@ export async function watchResourceByCluster(
 			});
 
 			req.on('error', (err: any) => {
-				const silent = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'FailedToOpenSocket'];
+				const silent = [
+					'ECONNRESET',
+					'ECONNREFUSED',
+					'ETIMEDOUT',
+					'ENOTFOUND',
+					'FailedToOpenSocket'
+				];
 				if (!silent.includes(err?.code)) {
 					console.error('[Watch Resource] Request error:', err);
 				}
@@ -391,4 +482,3 @@ export async function watchResourceByCluster(
 		throw error;
 	}
 }
-
