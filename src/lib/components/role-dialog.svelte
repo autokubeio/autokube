@@ -13,7 +13,26 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Settings, Users, Server, Eye, Terminal, Database, Bell, Key, Box, Layers, Timer, Network, Globe, FileText, HardDrive, Activity, Shield, Blocks } from 'lucide-svelte';
+	import {
+		Settings,
+		Users,
+		Server,
+		Eye,
+		Terminal,
+		Database,
+		Bell,
+		Key,
+		Box,
+		Layers,
+		Timer,
+		Network,
+		Globe,
+		FileText,
+		HardDrive,
+		Activity,
+		Shield,
+		Blocks
+	} from 'lucide-svelte';
 	import type { PermissionMap, ResolvedRole } from '$lib/server/queries/roles';
 
 	interface Props {
@@ -173,6 +192,17 @@
 			]
 		},
 		{
+			label: 'Gateway API',
+			icon: Network,
+			resource: 'gateway',
+			perms: [
+				{ id: 'view', label: 'View gateway resources' },
+				{ id: 'create', label: 'Create gateway resources' },
+				{ id: 'edit', label: 'Edit gateway resources' },
+				{ id: 'delete', label: 'Delete gateway resources' }
+			]
+		},
+		{
 			label: 'Configuration',
 			icon: FileText,
 			resource: 'config',
@@ -297,8 +327,12 @@
 			}
 			fetch('/api/clusters')
 				.then((r) => r.json())
-				.then((data) => { clusters = data.clusters ?? []; })
-				.catch(() => { clusters = []; });
+				.then((data) => {
+					clusters = data.clusters ?? [];
+				})
+				.catch(() => {
+					clusters = [];
+				});
 		}
 	});
 
@@ -413,7 +447,9 @@
 			<div class="space-y-1.5">
 				<div>
 					<Label class="text-xs">Cluster Scope</Label>
-					<p class="mt-0.5 text-xs text-muted-foreground">Which clusters this role's permissions apply to.</p>
+					<p class="mt-0.5 text-xs text-muted-foreground">
+						Which clusters this role's permissions apply to.
+					</p>
 				</div>
 				<div class="rounded-lg border bg-muted/20 p-3">
 					<label class="flex cursor-pointer items-center gap-2">
@@ -468,18 +504,20 @@
 							type="button"
 							class="text-[11px] text-primary hover:underline disabled:opacity-40"
 							onclick={selectAllSys}
-							disabled={saving}
-						>Select all</button>
+							disabled={saving}>Select all</button
+						>
 						<span class="text-[11px] text-muted-foreground/40">·</span>
 						<button
 							type="button"
 							class="text-[11px] text-muted-foreground hover:text-foreground hover:underline disabled:opacity-40"
 							onclick={deselectAllSys}
-							disabled={saving}
-						>Deselect all</button>
+							disabled={saving}>Deselect all</button
+						>
 					</div>
 					{#each SYSTEM_PERMISSION_GROUPS as group (group.resource)}
-						{@const groupAllOn = group.perms.every((p) => systemPerms.get(group.resource)?.has(p.id))}
+						{@const groupAllOn = group.perms.every((p) =>
+							systemPerms.get(group.resource)?.has(p.id)
+						)}
 						<div class="rounded-lg border bg-muted/20 p-3">
 							<div class="mb-2.5 flex items-center gap-1.5">
 								<group.icon class="size-3 text-muted-foreground" />
@@ -488,8 +526,8 @@
 									type="button"
 									class="ml-auto text-[10px] text-primary hover:underline disabled:opacity-40"
 									onclick={() => toggleGroupSys(group.resource, group.perms)}
-									disabled={saving}
-								>{groupAllOn ? 'Deselect all' : 'Select all'}</button>
+									disabled={saving}>{groupAllOn ? 'Deselect all' : 'Select all'}</button
+								>
 							</div>
 							<div class="grid grid-cols-2 gap-2">
 								{#each group.perms as p (p.id)}
@@ -518,18 +556,20 @@
 							type="button"
 							class="text-[11px] text-primary hover:underline disabled:opacity-40"
 							onclick={selectAllCls}
-							disabled={saving}
-						>Select all</button>
+							disabled={saving}>Select all</button
+						>
 						<span class="text-[11px] text-muted-foreground/40">·</span>
 						<button
 							type="button"
 							class="text-[11px] text-muted-foreground hover:text-foreground hover:underline disabled:opacity-40"
 							onclick={deselectAllCls}
-							disabled={saving}
-						>Deselect all</button>
+							disabled={saving}>Deselect all</button
+						>
 					</div>
 					{#each CLUSTER_PERMISSION_GROUPS as group (group.resource)}
-						{@const groupAllOn = group.perms.every((p) => clusterPerms.get(group.resource)?.has(p.id))}
+						{@const groupAllOn = group.perms.every((p) =>
+							clusterPerms.get(group.resource)?.has(p.id)
+						)}
 						<div class="rounded-lg border bg-muted/20 p-3">
 							<div class="mb-2.5 flex items-center gap-1.5">
 								<group.icon class="size-3 text-muted-foreground" />
@@ -538,8 +578,8 @@
 									type="button"
 									class="ml-auto text-[10px] text-primary hover:underline disabled:opacity-40"
 									onclick={() => toggleGroupCls(group.resource, group.perms)}
-									disabled={saving}
-								>{groupAllOn ? 'Deselect all' : 'Select all'}</button>
+									disabled={saving}>{groupAllOn ? 'Deselect all' : 'Select all'}</button
+								>
 							</div>
 							<div class="grid grid-cols-2 gap-2">
 								{#each group.perms as p (p.id)}

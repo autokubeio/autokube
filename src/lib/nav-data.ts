@@ -12,6 +12,10 @@ import {
 	Activity,
 	Network,
 	Globe,
+	Route,
+	Send,
+	FileKey,
+	Lock,
 	Shield,
 	FileText,
 	Key,
@@ -28,7 +32,7 @@ import {
 	Workflow,
 	Package,
 	History,
-	GitCompare,
+	GitCompare
 } from 'lucide-svelte';
 
 export type IconComponent = typeof LayoutDashboard;
@@ -82,6 +86,28 @@ export const menuCategories: readonly MenuCategory[] = [
 		]
 	},
 	{
+		label: 'Gateway (beta)',
+		items: [
+			{ href: '/gateways', Icon: Network, label: 'Gateways', permission: 'gateway' },
+			{ href: '/gatewayclasses', Icon: Network, label: 'Gateway Classes', permission: 'gateway' },
+			{ href: '/httproutes', Icon: Route, label: 'HTTP Routes', permission: 'gateway' },
+			{ href: '/grpcroutes', Icon: Send, label: 'GRPC Routes', permission: 'gateway' },
+			{ href: '/referencegrants', Icon: FileKey, label: 'Reference Grants', permission: 'gateway' },
+			{
+				href: '/backendtlspolicies',
+				Icon: Lock,
+				label: 'BackendTLSPolicies',
+				permission: 'gateway'
+			},
+			{
+				href: '/backendtrafficpolicies',
+				Icon: Activity,
+				label: 'BackendTrafficPolicies',
+				permission: 'gateway'
+			}
+		]
+	},
+	{
 		label: 'Configuration',
 		items: [
 			{ href: '/configmaps', Icon: FileText, label: 'ConfigMaps', permission: 'config' },
@@ -106,9 +132,19 @@ export const menuCategories: readonly MenuCategory[] = [
 	{
 		label: 'Access Control',
 		items: [
-			{ href: '/serviceaccounts', Icon: User, label: 'Service Accounts', permission: 'access_control' },
+			{
+				href: '/serviceaccounts',
+				Icon: User,
+				label: 'Service Accounts',
+				permission: 'access_control'
+			},
 			{ href: '/roles', Icon: Shield, label: 'Roles', permission: 'access_control' },
-			{ href: '/clusterroles', Icon: ShieldCheck, label: 'Cluster Roles', permission: 'access_control' },
+			{
+				href: '/clusterroles',
+				Icon: ShieldCheck,
+				label: 'Cluster Roles',
+				permission: 'access_control'
+			},
 			{ href: '/rolebindings', Icon: Link, label: 'Role Bindings', permission: 'access_control' },
 			{
 				href: '/clusterrolebindings',

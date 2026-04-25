@@ -157,4 +157,65 @@ export {
 } from './watch';
 
 // ── Transformers ────────────────────────────────────────────────────────────
-export { transformPod, transformPodMetrics, transformDeployment, transformDaemonSet, transformStatefulSet, transformReplicaSet, transformJob, transformCronJob, transformNode, transformEvent, transformService, transformEndpoint, transformEndpointSlice, transformIngress, transformIngressClass, transformNetworkPolicy, transformConfigMap, transformSecret, transformResourceQuota, transformLimitRange, transformPVC, transformPV, transformStorageClass, transformServiceAccount, transformRole, transformClusterRole, transformRoleBinding, transformClusterRoleBinding } from './transformers';
+export {
+	transformPod,
+	transformPodMetrics,
+	transformDeployment,
+	transformDaemonSet,
+	transformStatefulSet,
+	transformReplicaSet,
+	transformJob,
+	transformCronJob,
+	transformNode,
+	transformEvent,
+	transformService,
+	transformEndpoint,
+	transformEndpointSlice,
+	transformIngress,
+	transformIngressClass,
+	transformNetworkPolicy,
+	transformConfigMap,
+	transformSecret,
+	transformResourceQuota,
+	transformLimitRange,
+	transformPVC,
+	transformPV,
+	transformStorageClass,
+	transformServiceAccount,
+	transformRole,
+	transformClusterRole,
+	transformRoleBinding,
+	transformClusterRoleBinding
+} from './transformers';
+
+// ── Gateway API (beta) ──────────────────────────────────────────────────────
+export {
+	listGateways,
+	deleteGateway,
+	transformGateway,
+	listGatewayClasses,
+	deleteGatewayClass,
+	transformGatewayClass,
+	listHTTPRoutes,
+	deleteHTTPRoute,
+	transformHTTPRoute,
+	listGRPCRoutes,
+	deleteGRPCRoute,
+	transformGRPCRoute,
+	listReferenceGrants,
+	deleteReferenceGrant,
+	transformReferenceGrant,
+	listBackendTLSPolicies,
+	deleteBackendTLSPolicy,
+	transformBackendTLSPolicy,
+	listBackendTrafficPolicies,
+	deleteBackendTrafficPolicy,
+	transformBackendTrafficPolicy,
+	type GatewayInfo,
+	type GatewayClassInfo,
+	type HTTPRouteInfo,
+	type GRPCRouteInfo,
+	type ReferenceGrantInfo,
+	type BackendTLSPolicyInfo,
+	type BackendTrafficPolicyInfo
+} from './gateway-api';

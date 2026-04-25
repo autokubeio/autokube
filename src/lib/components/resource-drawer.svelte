@@ -116,35 +116,42 @@
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const RESOURCE_META: Record<string, { label: string; icon: any }> = {
-		pod:                  { label: 'Pod',                      icon: Box },
-		deployment:           { label: 'Deployment',               icon: GitBranch },
-		service:              { label: 'Service',                  icon: Network },
-		configmap:            { label: 'ConfigMap',                icon: FileText },
-		secret:               { label: 'Secret',                   icon: Key },
-		ingress:              { label: 'Ingress',                  icon: Globe },
-		daemonset:            { label: 'DaemonSet',                icon: Server },
-		statefulset:          { label: 'StatefulSet',              icon: Database },
-		job:                  { label: 'Job',                      icon: Package },
-		cronjob:              { label: 'CronJob',                  icon: Package },
-		replicaset:           { label: 'ReplicaSet',               icon: Layers },
-		namespace:            { label: 'Namespace',                icon: Box },
-		node:                 { label: 'Node',                     icon: Server },
-		persistentvolume:     { label: 'PersistentVolume',         icon: Database },
-		persistentvolumeclaim:{ label: 'PersistentVolumeClaim',   icon: Database },
-		serviceaccount:       { label: 'ServiceAccount',           icon: Shield },
-		role:                 { label: 'Role',                     icon: Shield },
-		rolebinding:          { label: 'RoleBinding',             icon: Shield },
-		clusterrole:          { label: 'ClusterRole',              icon: Shield },
-		clusterrolebinding:   { label: 'ClusterRoleBinding',      icon: Shield },
-		networkpolicy:        { label: 'NetworkPolicy',            icon: Network },
-		resourcequota:        { label: 'ResourceQuota',            icon: FileText },
-		limitrange:           { label: 'LimitRange',               icon: FileText },
-		hpa:                  { label: 'HorizontalPodAutoscaler',  icon: GitBranch },
-		storageclass:         { label: 'StorageClass',             icon: Database },
-		ingressclass:         { label: 'IngressClass',             icon: Globe },
-		endpoint:             { label: 'Endpoint',                 icon: Network },
-		endpointslice:        { label: 'EndpointSlice',           icon: Network },
-		event:                { label: 'Event',                    icon: FileText },
+		pod: { label: 'Pod', icon: Box },
+		deployment: { label: 'Deployment', icon: GitBranch },
+		service: { label: 'Service', icon: Network },
+		configmap: { label: 'ConfigMap', icon: FileText },
+		secret: { label: 'Secret', icon: Key },
+		ingress: { label: 'Ingress', icon: Globe },
+		daemonset: { label: 'DaemonSet', icon: Server },
+		statefulset: { label: 'StatefulSet', icon: Database },
+		job: { label: 'Job', icon: Package },
+		cronjob: { label: 'CronJob', icon: Package },
+		replicaset: { label: 'ReplicaSet', icon: Layers },
+		namespace: { label: 'Namespace', icon: Box },
+		node: { label: 'Node', icon: Server },
+		persistentvolume: { label: 'PersistentVolume', icon: Database },
+		persistentvolumeclaim: { label: 'PersistentVolumeClaim', icon: Database },
+		serviceaccount: { label: 'ServiceAccount', icon: Shield },
+		role: { label: 'Role', icon: Shield },
+		rolebinding: { label: 'RoleBinding', icon: Shield },
+		clusterrole: { label: 'ClusterRole', icon: Shield },
+		clusterrolebinding: { label: 'ClusterRoleBinding', icon: Shield },
+		networkpolicy: { label: 'NetworkPolicy', icon: Network },
+		resourcequota: { label: 'ResourceQuota', icon: FileText },
+		limitrange: { label: 'LimitRange', icon: FileText },
+		hpa: { label: 'HorizontalPodAutoscaler', icon: GitBranch },
+		storageclass: { label: 'StorageClass', icon: Database },
+		ingressclass: { label: 'IngressClass', icon: Globe },
+		endpoint: { label: 'Endpoint', icon: Network },
+		endpointslice: { label: 'EndpointSlice', icon: Network },
+		event: { label: 'Event', icon: FileText },
+		gateway: { label: 'Gateway', icon: Network },
+		gatewayclass: { label: 'GatewayClass', icon: Network },
+		httproute: { label: 'HTTPRoute', icon: Globe },
+		grpcroute: { label: 'GRPCRoute', icon: Globe },
+		referencegrant: { label: 'ReferenceGrant', icon: Shield },
+		backendtlspolicy: { label: 'BackendTLSPolicy', icon: Shield },
+		backendtrafficpolicy: { label: 'BackendTrafficPolicy', icon: Network }
 	};
 
 	// ── Resource readonly set ─────────────────────────────────────────────────
@@ -153,7 +160,14 @@
 
 	// ── Props ─────────────────────────────────────────────────────────────────
 
-	let { open = $bindable(false), clusterId, resource, readonly, onClose, onSuccess }: Props = $props();
+	let {
+		open = $bindable(false),
+		clusterId,
+		resource,
+		readonly,
+		onClose,
+		onSuccess
+	}: Props = $props();
 
 	// ── State ─────────────────────────────────────────────────────────────────
 
@@ -186,13 +200,13 @@
 	const isOpen = $derived(open && resource !== null);
 
 	const canEdit = $derived(
-		readonly !== undefined
-			? !readonly
-			: !ALWAYS_READONLY.has(resource?.resourceType ?? '')
+		readonly !== undefined ? !readonly : !ALWAYS_READONLY.has(resource?.resourceType ?? '')
 	);
 
 	const resourceMeta = $derived(
-		resource ? (RESOURCE_META[resource.resourceType] ?? { label: resource.resourceType, icon: FileCode }) : null
+		resource
+			? (RESOURCE_META[resource.resourceType] ?? { label: resource.resourceType, icon: FileCode })
+			: null
 	);
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -200,7 +214,7 @@
 
 	const editorFontFamily = $derived(
 		MONO_FONTS.find((f) => f.id === settingsStore.editorFont)?.family ??
-		'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace'
+			'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace'
 	);
 
 	// Parse YAML into top-level sections for the Describe tab
@@ -368,12 +382,12 @@
 			...(leading ? [{ text: leading, cls: '' }] : []),
 			{ text: v, cls }
 		];
-		if (v === 'true' || v === 'false')                          return seg('text-violet-400');
-		if (v === 'null' || v === '~')                              return seg('text-zinc-500 italic');
-		if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(v))              return seg('text-emerald-400');
-		if (v === '|' || v === '>' || v === '|-' || v === '>-')     return seg('text-zinc-400');
-		if (v.startsWith('"') || v.startsWith("'"))                  return seg('text-amber-300');
-		if (v.startsWith('http://') || v.startsWith('https://'))    return seg('text-sky-300 underline');
+		if (v === 'true' || v === 'false') return seg('text-violet-400');
+		if (v === 'null' || v === '~') return seg('text-zinc-500 italic');
+		if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(v)) return seg('text-emerald-400');
+		if (v === '|' || v === '>' || v === '|-' || v === '>-') return seg('text-zinc-400');
+		if (v.startsWith('"') || v.startsWith("'")) return seg('text-amber-300');
+		if (v.startsWith('http://') || v.startsWith('https://')) return seg('text-sky-300 underline');
 		return seg('text-zinc-200');
 	}
 
@@ -418,16 +432,16 @@
 	// ── Section header colours ────────────────────────────────────────────────
 
 	const SECTION_COLORS: Record<string, string> = {
-		apiVersion:  'text-violet-400  border-violet-700/40 bg-violet-950/30',
-		kind:        'text-sky-300     border-sky-700/40    bg-sky-950/30',
-		metadata:    'text-amber-300   border-amber-700/40  bg-amber-950/20',
-		spec:        'text-emerald-300 border-emerald-700/40 bg-emerald-950/20',
-		status:      'text-blue-300    border-blue-700/40   bg-blue-950/20',
-		data:        'text-teal-300    border-teal-700/40   bg-teal-950/20',
-		stringData:  'text-teal-300    border-teal-700/40   bg-teal-950/20',
-		rules:       'text-orange-300  border-orange-700/40 bg-orange-950/20',
-		roleRef:     'text-orange-300  border-orange-700/40 bg-orange-950/20',
-		subjects:    'text-orange-300  border-orange-700/40 bg-orange-950/20',
+		apiVersion: 'text-violet-400  border-violet-700/40 bg-violet-950/30',
+		kind: 'text-sky-300     border-sky-700/40    bg-sky-950/30',
+		metadata: 'text-amber-300   border-amber-700/40  bg-amber-950/20',
+		spec: 'text-emerald-300 border-emerald-700/40 bg-emerald-950/20',
+		status: 'text-blue-300    border-blue-700/40   bg-blue-950/20',
+		data: 'text-teal-300    border-teal-700/40   bg-teal-950/20',
+		stringData: 'text-teal-300    border-teal-700/40   bg-teal-950/20',
+		rules: 'text-orange-300  border-orange-700/40 bg-orange-950/20',
+		roleRef: 'text-orange-300  border-orange-700/40 bg-orange-950/20',
+		subjects: 'text-orange-300  border-orange-700/40 bg-orange-950/20'
 	};
 
 	function sectionColor(header: string): string {
@@ -470,7 +484,7 @@
 <div
 	bind:this={panelEl}
 	class={cn(
-		'fixed bottom-0 left-0 right-0 z-50 flex flex-col',
+		'fixed right-0 bottom-0 left-0 z-50 flex flex-col',
 		'border-t border-zinc-700/60 bg-zinc-950 shadow-2xl shadow-black/60',
 		'transition-transform duration-300 ease-out',
 		isOpen ? 'translate-y-0' : 'translate-y-full'
@@ -501,7 +515,7 @@
 		<span class="font-mono text-[11px] font-medium text-zinc-400">
 			{resourceMeta?.label ?? resource?.resourceType ?? ''}
 		</span>
-			<span class="max-w-50 truncate font-mono text-xs font-semibold text-zinc-200">
+		<span class="max-w-50 truncate font-mono text-xs font-semibold text-zinc-200">
 			{resource?.name ?? ''}
 		</span>
 		{#if resource?.namespace}
@@ -520,9 +534,7 @@
 			<button
 				class={cn(
 					'flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
-					activeTab === 'yaml'
-						? 'bg-zinc-700 text-zinc-100'
-						: 'text-zinc-500 hover:text-zinc-300'
+					activeTab === 'yaml' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
 				)}
 				onclick={() => (activeTab = 'yaml')}
 			>
@@ -622,7 +634,11 @@
 							{/if}
 						</Button>
 					</Tooltip.Trigger>
-					<Tooltip.Content>{editorTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}</Tooltip.Content>
+					<Tooltip.Content
+						>{editorTheme === 'dark'
+							? 'Switch to light theme'
+							: 'Switch to dark theme'}</Tooltip.Content
+					>
 				</Tooltip.Root>
 			{/if}
 
@@ -703,7 +719,7 @@
 				<span>Loading manifest…</span>
 			</div>
 
-		<!-- Error state -->
+			<!-- Error state -->
 		{:else if loadState === 'error'}
 			<div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
 				<div class="flex size-10 items-center justify-center rounded-full bg-red-500/10">
@@ -724,19 +740,23 @@
 				</Button>
 			</div>
 
-		<!-- Idle placeholder -->
+			<!-- Idle placeholder -->
 		{:else if loadState === 'idle'}
 			<div class="flex h-full items-center justify-center text-xs text-zinc-600">
 				Select a resource to view its manifest
 			</div>
 
-		<!-- ── YAML Tab ────────────────────────────────────────────────── -->
+			<!-- ── YAML Tab ────────────────────────────────────────────────── -->
 		{:else if activeTab === 'yaml'}
 			<div class="flex h-full flex-col overflow-hidden">
 				{#if isEditing}
-					<div class="flex shrink-0 items-center gap-2 border-b border-amber-500/20 bg-amber-950/20 px-3 py-1">
+					<div
+						class="flex shrink-0 items-center gap-2 border-b border-amber-500/20 bg-amber-950/20 px-3 py-1"
+					>
 						<Pencil class="size-3 shrink-0 text-amber-400" />
-						<span class="text-[11px] text-amber-300">Editing — changes will be applied directly to the cluster</span>
+						<span class="text-[11px] text-amber-300"
+							>Editing — changes will be applied directly to the cluster</span
+						>
 						{#if isDirty}
 							<span class="ml-auto text-[10px] text-amber-400/70">Unsaved changes</span>
 						{/if}
@@ -757,7 +777,7 @@
 				/>
 			</div>
 
-		<!-- ── Describe Tab ────────────────────────────────────────────── -->
+			<!-- ── Describe Tab ────────────────────────────────────────────── -->
 		{:else}
 			<div class="h-full overflow-auto bg-zinc-950 px-3 py-2">
 				{#if describeSections.length === 0}
@@ -794,7 +814,7 @@
 								<!-- Section body -->
 								{#if !collapsed}
 									<div
-										class="overflow-x-auto border-t border-white/5 px-1 pb-1 pt-0.5 font-mono"
+										class="overflow-x-auto border-t border-white/5 px-1 pt-0.5 pb-1 font-mono"
 										style="font-size: 12px; line-height: 1.6;"
 									>
 										{#each section.lines as line, li (li)}
@@ -823,8 +843,10 @@
 	>
 		<span class="font-mono text-[10px] text-zinc-600">
 			{#if loadState === 'loaded'}
-			{yamlText.split('\n').length} lines · {(new TextEncoder().encode(yamlText).length / 1024).toFixed(1)} kB
-			{#if isDirty}<span class="ml-2 text-amber-400/80">· unsaved changes</span>{/if}
+				{yamlText.split('\n').length} lines · {(
+					new TextEncoder().encode(yamlText).length / 1024
+				).toFixed(1)} kB
+				{#if isDirty}<span class="ml-2 text-amber-400/80">· unsaved changes</span>{/if}
 			{:else if loadState === 'loading'}
 				Loading…
 			{:else if loadState === 'error'}
