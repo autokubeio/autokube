@@ -35,7 +35,14 @@ export enum TableName {
 	rolebindings = 'rolebindings',
 	clusterrolebindings = 'clusterrolebindings',
 	helmreleases = 'helmreleases',
-	imagescans = 'imagescans'
+	imagescans = 'imagescans',
+	gateways = 'gateways',
+	gatewayclasses = 'gatewayclasses',
+	httproutes = 'httproutes',
+	grpcroutes = 'grpcroutes',
+	referencegrants = 'referencegrants',
+	backendtlspolicies = 'backendtlspolicies',
+	backendtrafficpolicies = 'backendtrafficpolicies'
 }
 
 // Audit log table columns
@@ -58,8 +65,22 @@ export const nodesColumns: ColumnConfig[] = [
 	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
 	{ id: 'version', label: 'Version', width: 120, minWidth: 100, sortable: true },
 	{ id: 'cpu', label: 'CPU', width: 100, minWidth: 80, sortable: true, sortField: 'cpuUsage' },
-	{ id: 'memory', label: 'Memory', width: 100, minWidth: 80, sortable: true, sortField: 'memoryUsage' },
-	{ id: 'disk', label: 'Disk', width: 100, minWidth: 80, sortable: true, sortField: 'diskCapacity' },
+	{
+		id: 'memory',
+		label: 'Memory',
+		width: 100,
+		minWidth: 80,
+		sortable: true,
+		sortField: 'memoryUsage'
+	},
+	{
+		id: 'disk',
+		label: 'Disk',
+		width: 100,
+		minWidth: 80,
+		sortable: true,
+		sortField: 'diskCapacity'
+	},
 	{ id: 'pods', label: 'Pods', width: 80, minWidth: 60, sortable: true, sortField: 'podsCount' },
 	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
 ];
@@ -381,8 +402,94 @@ export const helmReleasesColumns: ColumnConfig[] = [
 	{ id: 'actions', label: '', fixed: 'end', width: 80, resizable: false }
 ];
 
-export const imageScansColumns: ColumnConfig[] = [	
-	{ id: 'select', label: '', fixed: 'start', width: 36, resizable: false },	
+export const gatewaysColumns: ColumnConfig[] = [
+	{ id: 'name', label: 'Name', width: 200, minWidth: 150, grow: true, sortable: true },
+	{ id: 'namespace', label: 'Namespace', width: 130, minWidth: 100, sortable: true },
+	{
+		id: 'class',
+		label: 'Class',
+		width: 140,
+		minWidth: 100,
+		sortable: true,
+		sortField: 'gatewayClassName'
+	},
+	{
+		id: 'listeners',
+		label: 'Listeners',
+		width: 90,
+		minWidth: 70,
+		sortable: true,
+		sortField: 'listenerCount'
+	},
+	{ id: 'addresses', label: 'Addresses', width: 200, minWidth: 140, sortable: true },
+	{ id: 'programmed', label: 'Programmed', width: 120, minWidth: 100, sortable: true },
+	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+];
+
+export const gatewayClassesColumns: ColumnConfig[] = [
+	{ id: 'name', label: 'Name', width: 220, minWidth: 160, grow: true, sortable: true },
+	{
+		id: 'controller',
+		label: 'Controller',
+		width: 320,
+		minWidth: 200,
+		sortable: true,
+		sortField: 'controllerName'
+	},
+	{ id: 'accepted', label: 'Accepted', width: 110, minWidth: 80, sortable: true },
+	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+];
+
+export const httpRoutesColumns: ColumnConfig[] = [
+	{ id: 'name', label: 'Name', width: 200, minWidth: 150, grow: true, sortable: true },
+	{ id: 'namespace', label: 'Namespace', width: 130, minWidth: 100, sortable: true },
+	{ id: 'hostnames', label: 'Hostnames', width: 240, minWidth: 160, sortable: true },
+	{ id: 'parents', label: 'Parents', width: 240, minWidth: 160, sortable: true },
+	{ id: 'rules', label: 'Rules', width: 80, minWidth: 60, sortable: true, sortField: 'ruleCount' },
+	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+];
+
+export const grpcRoutesColumns: ColumnConfig[] = [
+	{ id: 'name', label: 'Name', width: 200, minWidth: 150, grow: true, sortable: true },
+	{ id: 'namespace', label: 'Namespace', width: 130, minWidth: 100, sortable: true },
+	{ id: 'hostnames', label: 'Hostnames', width: 240, minWidth: 160, sortable: true },
+	{ id: 'parents', label: 'Parents', width: 240, minWidth: 160, sortable: true },
+	{ id: 'rules', label: 'Rules', width: 80, minWidth: 60, sortable: true, sortField: 'ruleCount' },
+	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+];
+
+export const referenceGrantsColumns: ColumnConfig[] = [
+	{ id: 'name', label: 'Name', width: 200, minWidth: 150, grow: true, sortable: true },
+	{ id: 'namespace', label: 'Namespace', width: 130, minWidth: 100, sortable: true },
+	{ id: 'from', label: 'From', width: 240, minWidth: 160, sortable: true },
+	{ id: 'to', label: 'To', width: 240, minWidth: 160, sortable: true },
+	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+];
+
+export const backendTLSPoliciesColumns: ColumnConfig[] = [
+	{ id: 'name', label: 'Name', width: 200, minWidth: 150, grow: true, sortable: true },
+	{ id: 'namespace', label: 'Namespace', width: 130, minWidth: 100, sortable: true },
+	{ id: 'targetRefs', label: 'Targets', width: 260, minWidth: 160, sortable: true },
+	{ id: 'hostname', label: 'Hostname', width: 200, minWidth: 140, sortable: true },
+	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+];
+
+export const backendTrafficPoliciesColumns: ColumnConfig[] = [
+	{ id: 'name', label: 'Name', width: 200, minWidth: 150, grow: true, sortable: true },
+	{ id: 'namespace', label: 'Namespace', width: 130, minWidth: 100, sortable: true },
+	{ id: 'targetRefs', label: 'Targets', width: 320, minWidth: 200, sortable: true },
+	{ id: 'age', label: 'Age', width: 80, minWidth: 60, sortable: true, sortField: 'createdAt' },
+	{ id: 'actions', label: '', fixed: 'end', width: 90, resizable: false }
+];
+
+export const imageScansColumns: ColumnConfig[] = [
+	{ id: 'select', label: '', fixed: 'start', width: 36, resizable: false },
 	{ id: 'expand', label: '', fixed: 'start', width: 36, resizable: false },
 	{ id: 'image', label: 'Image', width: 250, minWidth: 200, grow: true, sortable: true },
 	{ id: 'tag', label: 'Tag', width: 120, minWidth: 80, sortable: true },

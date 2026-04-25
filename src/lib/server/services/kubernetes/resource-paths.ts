@@ -43,23 +43,80 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
 
 	// Networking API (networking.k8s.io/v1) resources
 	ingress: { path: 'ingresses', namespaced: true, apiGroup: '/apis/networking.k8s.io/v1' },
-	networkpolicy: { path: 'networkpolicies', namespaced: true, apiGroup: '/apis/networking.k8s.io/v1' },
-	ingressclass: { path: 'ingressclasses', namespaced: false, apiGroup: '/apis/networking.k8s.io/v1' },
+	networkpolicy: {
+		path: 'networkpolicies',
+		namespaced: true,
+		apiGroup: '/apis/networking.k8s.io/v1'
+	},
+	ingressclass: {
+		path: 'ingressclasses',
+		namespaced: false,
+		apiGroup: '/apis/networking.k8s.io/v1'
+	},
 
 	// Discovery API (discovery.k8s.io/v1) resources
-	endpointslice: { path: 'endpointslices', namespaced: true, apiGroup: '/apis/discovery.k8s.io/v1' },
+	endpointslice: {
+		path: 'endpointslices',
+		namespaced: true,
+		apiGroup: '/apis/discovery.k8s.io/v1'
+	},
 
 	// RBAC API (rbac.authorization.k8s.io/v1) resources
 	role: { path: 'roles', namespaced: true, apiGroup: '/apis/rbac.authorization.k8s.io/v1' },
-	rolebinding: { path: 'rolebindings', namespaced: true, apiGroup: '/apis/rbac.authorization.k8s.io/v1' },
-	clusterrole: { path: 'clusterroles', namespaced: false, apiGroup: '/apis/rbac.authorization.k8s.io/v1' },
-	clusterrolebinding: { path: 'clusterrolebindings', namespaced: false, apiGroup: '/apis/rbac.authorization.k8s.io/v1' },
+	rolebinding: {
+		path: 'rolebindings',
+		namespaced: true,
+		apiGroup: '/apis/rbac.authorization.k8s.io/v1'
+	},
+	clusterrole: {
+		path: 'clusterroles',
+		namespaced: false,
+		apiGroup: '/apis/rbac.authorization.k8s.io/v1'
+	},
+	clusterrolebinding: {
+		path: 'clusterrolebindings',
+		namespaced: false,
+		apiGroup: '/apis/rbac.authorization.k8s.io/v1'
+	},
 
 	// Autoscaling API (autoscaling/v2) resources
 	hpa: { path: 'horizontalpodautoscalers', namespaced: true, apiGroup: '/apis/autoscaling/v2' },
 
 	// Storage API (storage.k8s.io/v1) resources
-	storageclass: { path: 'storageclasses', namespaced: false, apiGroup: '/apis/storage.k8s.io/v1' }
+	storageclass: { path: 'storageclasses', namespaced: false, apiGroup: '/apis/storage.k8s.io/v1' },
+
+	// Gateway API (gateway.networking.k8s.io) — beta
+	gateway: { path: 'gateways', namespaced: true, apiGroup: '/apis/gateway.networking.k8s.io/v1' },
+	gatewayclass: {
+		path: 'gatewayclasses',
+		namespaced: false,
+		apiGroup: '/apis/gateway.networking.k8s.io/v1'
+	},
+	httproute: {
+		path: 'httproutes',
+		namespaced: true,
+		apiGroup: '/apis/gateway.networking.k8s.io/v1'
+	},
+	grpcroute: {
+		path: 'grpcroutes',
+		namespaced: true,
+		apiGroup: '/apis/gateway.networking.k8s.io/v1'
+	},
+	referencegrant: {
+		path: 'referencegrants',
+		namespaced: true,
+		apiGroup: '/apis/gateway.networking.k8s.io/v1beta1'
+	},
+	backendtlspolicy: {
+		path: 'backendtlspolicies',
+		namespaced: true,
+		apiGroup: '/apis/gateway.networking.k8s.io/v1alpha3'
+	},
+	backendtrafficpolicy: {
+		path: 'backendtrafficpolicies',
+		namespaced: true,
+		apiGroup: '/apis/gateway.envoyproxy.io/v1alpha1'
+	}
 };
 
 /**
@@ -95,7 +152,14 @@ export const RESOURCE_ALIASES: Record<string, string> = {
 	clusterrolebindings: 'clusterrolebinding',
 	hpas: 'hpa',
 	horizontalpodautoscalers: 'hpa',
-	storageclasses: 'storageclass'
+	storageclasses: 'storageclass',
+	gateways: 'gateway',
+	gatewayclasses: 'gatewayclass',
+	httproutes: 'httproute',
+	grpcroutes: 'grpcroute',
+	referencegrants: 'referencegrant',
+	backendtlspolicies: 'backendtlspolicy',
+	backendtrafficpolicies: 'backendtrafficpolicy'
 };
 
 /**
@@ -107,11 +171,11 @@ export function getResourceConfig(resourceType: string): ResourceConfig {
 	const normalized = resourceType.toLowerCase();
 	const canonical = RESOURCE_ALIASES[normalized] || normalized;
 	const config = RESOURCE_CONFIGS[canonical];
-	
+
 	if (!config) {
 		throw new Error(`Unsupported resource type: ${resourceType}`);
 	}
-	
+
 	return config;
 }
 
@@ -122,9 +186,13 @@ export function getResourceConfig(resourceType: string): ResourceConfig {
  * @param namespace - Namespace (required for namespaced resources)
  * @returns Full API path (e.g., '/api/v1/namespaces/default/pods/my-pod')
  */
-export function buildApiPath(resourceType: string, resourceName: string, namespace?: string): string {
+export function buildApiPath(
+	resourceType: string,
+	resourceName: string,
+	namespace?: string
+): string {
 	const config = getResourceConfig(resourceType);
-	
+
 	if (config.namespaced) {
 		if (!namespace) {
 			throw new Error(`Namespace is required for resource type: ${resourceType}`);
@@ -143,7 +211,7 @@ export function buildApiPath(resourceType: string, resourceName: string, namespa
  */
 export function buildListApiPath(resourceType: string, namespace?: string): string {
 	const config = getResourceConfig(resourceType);
-	
+
 	if (config.namespaced && namespace) {
 		return `${config.apiGroup}/namespaces/${namespace}/${config.path}`;
 	} else {
@@ -158,7 +226,11 @@ export function buildListApiPath(resourceType: string, namespace?: string): stri
  * @param timeoutSeconds - Watch timeout in seconds (default: 300)
  * @returns Watch API path with query parameters
  */
-export function buildWatchPath(resourceType: string, namespace?: string, timeoutSeconds = 300): string {
+export function buildWatchPath(
+	resourceType: string,
+	namespace?: string,
+	timeoutSeconds = 300
+): string {
 	const listPath = buildListApiPath(resourceType, namespace);
 	return `${listPath}?watch=1&timeoutSeconds=${timeoutSeconds}`;
 }

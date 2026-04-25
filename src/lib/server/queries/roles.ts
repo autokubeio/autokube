@@ -21,6 +21,7 @@ export interface PermissionMap {
 	jobs: string[];
 	services: string[];
 	ingress: string[];
+	gateway: string[];
 	config: string[];
 	volumes: string[];
 	nodes: string[];
