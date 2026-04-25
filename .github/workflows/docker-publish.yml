@@ -109,3 +109,67 @@ jobs:
           git add charts/autokube/Chart.yaml charts/autokube/values.yaml
           git diff --staged --quiet && echo "No changes" || \
             (git commit -m "chore: bump autokube to ${{ needs.docker.outputs.version }}" && git push)
+
+  # ── Create draft GitHub Release with auto-generated changelog ─────────────
+  release:
+    name: Create Draft Release
+    runs-on: ubuntu-latest
+    needs: docker
+    # Only on tag push, not on workflow_dispatch (which has no tag)
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags for changelog
+
+      - name: Build release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+
+          # Most recent semver tag that isn't the one being released
+          PREV_TAG=$(git tag --sort=-v:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -v "^${VERSION}$" \
+            | head -n1 || true)
+
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges)
+            COMPARE_LINK="**Full diff:** https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}"
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges)
+            COMPARE_LINK=""
+          fi
+
+          {
+            echo "${VERSION} — <!-- TODO: headline -->"
+            echo ""
+            echo "<!-- TODO: 1-2 sentence intro describing the theme of this release -->"
+            echo ""
+            echo "## ✨ Highlights"
+            echo ""
+            echo "<!-- TODO: Group the major themes from the changelog below into bold-titled sections -->"
+            echo ""
+            echo "## 🔧 Upgrade notes"
+            echo ""
+            echo "<!-- TODO: Migration steps, breaking changes, backwards-compat notes. Delete this section if there's nothing to flag. -->"
+            echo ""
+            echo "## 📝 Full changelog"
+            echo ""
+            echo "${CHANGELOG}"
+            if [ -n "${COMPARE_LINK}" ]; then
+              echo ""
+              echo "${COMPARE_LINK}"
+            fi
+          } > /tmp/release-notes.md
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${{ github.repository }}" \
+            --title "${GITHUB_REF_NAME}" \
+            --draft \
+            --notes-file /tmp/release-notes.md
