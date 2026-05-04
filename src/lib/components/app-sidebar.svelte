@@ -93,6 +93,7 @@
 	let licenseTier = $state<'none' | 'professional' | 'enterprise'>('none');
 
 	onMount(async () => {
+		pinnedItemsStore.hydrate();
 		try {
 			const res = await fetch('/api/license');
 			if (res.ok) {
