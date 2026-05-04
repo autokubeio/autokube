@@ -10,12 +10,13 @@
 		SidebarGroupLabel,
 		SidebarHeader,
 		SidebarMenu,
+		SidebarMenuAction,
 		SidebarMenuButton,
 		SidebarMenuItem,
 		SidebarRail,
 		SidebarSeparator
 	} from '$lib/components/ui/sidebar';
-	import { ChevronsUpDown, LogOut, Sparkles, BadgeCheck, Bell, Zap } from 'lucide-svelte';
+	import { ChevronsUpDown, LogOut, Sparkles, BadgeCheck, Bell, Zap, Pin, PinOff } from 'lucide-svelte';
 	import * as Accordion from '$lib/components/ui/accordion';
 	import { page } from '$app/state';
 	import { page as pstore } from '$app/stores';
@@ -23,6 +24,8 @@
 	import { topItems, menuCategories, bottomItems, type MenuItem } from '$lib/nav-data';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
+	import { pinnedItemsStore, MAX_PINNED } from '$lib/stores/pinned-items.svelte';
 
 	interface Props {
 		authEnabled: boolean;
@@ -102,6 +105,34 @@
 			licenseTier = 'none';
 		}
 	});
+
+	// Lookup by href across all categories (only category items are pinnable).
+	const itemsByHref = $derived.by(() => {
+		const map = new Map<string, MenuItem>();
+		for (const cat of menuCategories) {
+			for (const item of cat.items) map.set(item.href, item);
+		}
+		return map;
+	});
+
+	const pinnedItems = $derived(
+		pinnedItemsStore.items
+			.map((href) => itemsByHref.get(href))
+			.filter((item): item is MenuItem => Boolean(item))
+	);
+
+	function togglePin(item: MenuItem, e: Event) {
+		e.preventDefault();
+		e.stopPropagation();
+		const result = pinnedItemsStore.toggle(item.href);
+		if (result === 'limit') {
+			toast.error(`You can pin up to ${MAX_PINNED} items`, {
+				description: 'Unpin one to add another.'
+			});
+		} else if (result === 'pinned') {
+			toast.success(`Pinned "${item.label}"`);
+		}
+	}
 </script>
 
 <Sidebar collapsible="icon">
@@ -132,6 +163,38 @@
 
 	<!-- Top Items (Dashboard) -->
 	<SidebarContent>
+		{#if pinnedItems.length > 0}
+			<SidebarGroup class="pb-0">
+				<SidebarGroupLabel>Pinned</SidebarGroupLabel>
+				<SidebarGroupContent>
+					<SidebarMenu>
+						{#each pinnedItems as item (item.href)}
+							<SidebarMenuItem>
+								<SidebarMenuButton
+									isActive={page.url.pathname === item.href}
+									tooltipContent={item.label}
+								>
+									{#snippet child({ props })}
+										<a href={item.href} {...props}>
+											<item.Icon />
+											<span>{item.label}</span>
+										</a>
+									{/snippet}
+								</SidebarMenuButton>
+								<SidebarMenuAction
+									showOnHover
+									title="Unpin"
+									aria-label="Unpin {item.label}"
+									onclick={(e) => togglePin(item, e)}
+								>
+									<PinOff />
+								</SidebarMenuAction>
+							</SidebarMenuItem>
+						{/each}
+					</SidebarMenu>
+				</SidebarGroupContent>
+			</SidebarGroup>
+		{/if}
 		<SidebarGroup class="pb-0">
 			<SidebarMenu>
 				{#each topItems as item}
@@ -178,6 +241,7 @@
 							<SidebarGroupContent>
 								<SidebarMenu>
 									{#each category.items as item}
+										{@const pinned = pinnedItemsStore.isPinned(item.href)}
 										<SidebarMenuItem>
 											<SidebarMenuButton
 												isActive={page.url.pathname === item.href}
@@ -198,6 +262,19 @@
 													</a>
 												{/snippet}
 											</SidebarMenuButton>
+											<SidebarMenuAction
+												showOnHover
+												title={pinned ? 'Unpin' : 'Pin'}
+												aria-label={pinned ? `Unpin ${item.label}` : `Pin ${item.label}`}
+												aria-pressed={pinned}
+												onclick={(e) => togglePin(item, e)}
+											>
+												{#if pinned}
+													<PinOff />
+												{:else}
+													<Pin />
+												{/if}
+											</SidebarMenuAction>
 										</SidebarMenuItem>
 									{/each}
 								</SidebarMenu>
